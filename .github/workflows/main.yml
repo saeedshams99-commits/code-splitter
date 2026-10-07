@@ -1,0 +1,500 @@
+name: Build Splitter APK
+
+on:
+  push:
+    branches: [ "main", "master" ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v3
+
+      - name: Scaffold Android Project
+        run: |
+          mkdir -p app/src/main/java/com/saeed/splitter
+          mkdir -p app/src/main/assets
+          mkdir -p app/src/main/res/values
+
+          # 1. settings.gradle
+          cat << 'EOF' > settings.gradle
+          rootProject.name = "CodeSplitter"
+          include ':app'
+          EOF
+
+          # 2. root build.gradle
+          cat << 'EOF' > build.gradle
+          buildscript {
+              repositories {
+                  google()
+                  mavenCentral()
+              }
+              dependencies {
+                  classpath 'com.android.tools.build:gradle:8.5.2'
+              }
+          }
+          allprojects {
+              repositories {
+                  google()
+                  mavenCentral()
+              }
+          }
+          EOF
+
+          # 3. app/build.gradle
+          cat << 'EOF' > app/build.gradle
+          apply plugin: 'com.android.application'
+
+          android {
+              namespace 'com.saeed.splitter'
+              compileSdk 34
+
+              defaultConfig {
+                  applicationId "com.saeed.splitter"
+                  minSdk 21
+                  targetSdk 34
+                  versionCode 1
+                  versionName "1.0"
+              }
+
+              buildTypes {
+                  release {
+                      minifyEnabled false
+                      signingConfig signingConfigs.debug
+                  }
+              }
+
+              compileOptions {
+                  sourceCompatibility JavaVersion.VERSION_17
+                  targetCompatibility JavaVersion.VERSION_17
+              }
+          }
+
+          dependencies {
+              implementation 'androidx.appcompat:appcompat:1.6.1'
+          }
+          EOF
+
+          # 4. AndroidManifest.xml
+          cat << 'EOF' > app/src/main/AndroidManifest.xml
+          <?xml version="1.0" encoding="utf-8"?>
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android"
+              package="com.saeed.splitter">
+
+              <uses-permission android:name="android.permission.INTERNET" />
+
+              <application
+                  android:allowBackup="true"
+                  android:label="&#x0628;&#x0631;&#x0634; &#x06A9;&#x062F;"
+                  android:supportsRtl="true"
+                  android:theme="@android:style/Theme.NoTitleBar">
+                  <activity
+                      android:name=".MainActivity"
+                      android:exported="true"
+                      android:configChanges="orientation|screenSize|keyboardHidden"
+                      android:windowSoftInputMode="adjustResize">
+                      <intent-filter>
+                          <action android:name="android.intent.action.MAIN" />
+                          <category android:name="android.intent.category.LAUNCHER" />
+                      </intent-filter>
+                  </activity>
+              </application>
+          </manifest>
+          EOF
+
+          # 5. MainActivity.java
+          cat << 'EOF' > app/src/main/java/com/saeed/splitter/MainActivity.java
+          package com.saeed.splitter;
+
+          import android.app.Activity;
+          import android.content.ClipData;
+          import android.content.ClipboardManager;
+          import android.content.Context;
+          import android.content.SharedPreferences;
+          import android.os.Bundle;
+          import android.webkit.JavascriptInterface;
+          import android.webkit.WebSettings;
+          import android.webkit.WebView;
+          import android.widget.Toast;
+
+          public class MainActivity extends Activity {
+              private WebView webView;
+
+              @Override
+              protected void onCreate(Bundle savedInstanceState) {
+                  super.onCreate(savedInstanceState);
+                  webView = new WebView(this);
+                  setContentView(webView);
+
+                  WebSettings ws = webView.getSettings();
+                  ws.setJavaScriptEnabled(true);
+                  ws.setDomStorageEnabled(true);
+                  ws.setBuiltInZoomControls(false);
+
+                  webView.addJavascriptInterface(new WebBridge(this), "Android");
+                  webView.loadUrl("file:///android_asset/index.html");
+              }
+
+              public class WebBridge {
+                  private Context ctx;
+                  private SharedPreferences sp;
+
+                  public WebBridge(Context c) {
+                      this.ctx = c;
+                      this.sp = c.getSharedPreferences("splitter_prefs", Context.MODE_PRIVATE);
+                  }
+
+                  @JavascriptInterface
+                  public String clip() {
+                      try {
+                          ClipboardManager cm = (ClipboardManager) ctx.getSystemService(Context.CLIPBOARD_SERVICE);
+                          if (cm != null && cm.hasPrimaryClip() && cm.getPrimaryClip().getItemCount() > 0) {
+                              CharSequence text = cm.getPrimaryClip().getItemAt(0).getText();
+                              return text != null ? text.toString() : "";
+                          }
+                      } catch (Exception e) {}
+                      return "";
+                  }
+
+                  @JavascriptInterface
+                  public void setClip(final String text) {
+                      runOnUiThread(new Runnable() {
+                          @Override
+                          public void run() {
+                              try {
+                                  ClipboardManager cm = (ClipboardManager) ctx.getSystemService(Context.CLIPBOARD_SERVICE);
+                                  ClipData cd = ClipData.newPlainText("code_chunk", text);
+                                  if (cm != null) {
+                                      cm.setPrimaryClip(cd);
+                                      Toast.makeText(ctx, "\u062A\u06A9\u0647 \u06A9\u067E\u06CC \u0634\u062F", Toast.LENGTH_SHORT).show();
+                                  }
+                              } catch (Exception e) {}
+                          }
+                      });
+                  }
+
+                  @JavascriptInterface
+                  public void save(String k, String v) {
+                      sp.edit().putString(k, v).apply();
+                  }
+
+                  @JavascriptInterface
+                  public String load(String k) {
+                      return sp.getString(k, "");
+                  }
+              }
+          }
+          EOF
+
+          # 6. HTML / JS Assets (index.html)
+          cat << 'EOF' > app/src/main/assets/index.html
+          <!DOCTYPE html>
+          <html lang="fa" dir="rtl">
+          <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+            <title>&#x0628;&#x0631;&#x0634; &#x06A9;&#x062F;</title>
+            <style>
+              * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+              body {
+                background-color: #0f172a;
+                color: #f8fafc;
+                font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Tahoma, sans-serif;
+                padding: 12px;
+                padding-bottom: 50px;
+              }
+              .head {
+                text-align: center;
+                background: #1e293b;
+                border: 1px solid #334155;
+                border-radius: 12px;
+                padding: 12px;
+                margin-bottom: 12px;
+              }
+              .head h1 { font-size: 1.2rem; color: #38bdf8; margin-bottom: 4px; }
+              .head p { font-size: 0.75rem; color: #94a3b8; }
+              .box {
+                background: #1e293b;
+                border: 1px solid #334155;
+                border-radius: 12px;
+                padding: 12px;
+                margin-bottom: 12px;
+              }
+              textarea {
+                width: 100%;
+                height: 150px;
+                background: #020617;
+                border: 1px solid #475569;
+                border-radius: 8px;
+                color: #e2e8f0;
+                font-family: monospace;
+                font-size: 0.8rem;
+                padding: 10px;
+                resize: none;
+                direction: ltr;
+                text-align: left;
+              }
+              .btn-grid {
+                display: grid;
+                grid-template-columns: 1fr 1fr;
+                gap: 8px;
+                margin-top: 8px;
+              }
+              .btn {
+                border: none;
+                border-radius: 8px;
+                padding: 12px 6px;
+                font-size: 0.85rem;
+                font-weight: bold;
+                color: white;
+                cursor: pointer;
+                text-align: center;
+              }
+              .btn:active { opacity: 0.8; }
+              .btn-blue { background: #0284c7; }
+              .btn-green { background: #16a34a; }
+              .btn-red { background: #dc2626; }
+              .btn-full { grid-column: span 2; }
+              .stats {
+                display: flex;
+                justify-content: space-around;
+                background: #020617;
+                border-radius: 8px;
+                padding: 8px;
+                margin-top: 10px;
+                font-size: 0.75rem;
+                color: #94a3b8;
+              }
+              .stats b { color: #38bdf8; }
+              .alert {
+                padding: 8px 10px;
+                border-radius: 8px;
+                font-size: 0.75rem;
+                margin-top: 8px;
+                display: none;
+              }
+              .alert-err { background: #7f1d1d; color: #fca5a5; }
+              .alert-ok { background: #064e3b; color: #6ee7b7; }
+              .chunk {
+                background: #1e293b;
+                border: 1px solid #334155;
+                border-radius: 10px;
+                padding: 12px;
+                margin-top: 10px;
+              }
+              .chunk-top {
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                margin-bottom: 8px;
+              }
+              .chunk-name { color: #fbbf24; font-weight: bold; font-size: 0.9rem; }
+              .chunk-info { color: #94a3b8; font-size: 0.75rem; }
+              .btn-copy {
+                width: 100%;
+                background: #2563eb;
+                color: white;
+                border: none;
+                border-radius: 8px;
+                padding: 12px;
+                font-size: 0.9rem;
+                font-weight: bold;
+              }
+              .btn-copy.done { background: #10b981; }
+            </style>
+          </head>
+          <body>
+            <div class="head">
+              <h1>&#x2702;&#xFE0F; &#x0627;&#x0628;&#x0632;&#x0627;&#x0631; &#x0628;&#x0631;&#x0634; &#x06A9;&#x062F;</h1>
+              <p>&#x0645;&#x062E;&#x0635;&#x0648;&#x0635; &#x0627;&#x067E;&#x200C;&#x0647;&#x0627;&#x06CC; &#x06AF;&#x06CC;&#x062A;&#x200C;&#x0647;&#x0627;&#x0628; &#x0648; &#x0686;&#x062A;&#x200C;&#x0628;&#x0627;&#x062A;</p>
+            </div>
+
+            <div class="box">
+              <textarea id="src" placeholder="&#x06A9;&#x062F; &#x0631;&#x0627; &#x0627;&#x06CC;&#x0646;&#x062C;&#x0627; &#x067E;&#x06CC;&#x0633;&#x062A; &#x06A9;&#x0646;&#x06CC;&#x062F;..."></textarea>
+              
+              <div class="btn-grid">
+                <button class="btn btn-green btn-full" onclick="doSplit()">&#x26A1; &#x0628;&#x0631;&#x0634; &#x0647;&#x0648;&#x0634;&#x0645;&#x0646;&#x062F; &#x06A9;&#x062F;</button>
+                <button class="btn btn-blue" onclick="pasteClip()">&#xD83D;&#xDCCB; &#x067E;&#x06CC;&#x0633;&#x062A; &#x0633;&#x0631;&#x06CC;&#x0639;</button>
+                <button class="btn btn-red" onclick="resetAll()">&#xD83D;&#xDDD1;&#xFE0F; &#x067E;&#x0627;&#x06A9; &#x06A9;&#x0631;&#x062F;&#x0646;</button>
+              </div>
+
+              <div class="stats" id="stBox" style="display:none;">
+                <span>&#x062E;&#x0637;&#x200C;&#x0647;&#x0627;: <b id="stL">0</b></span>
+                <span>&#x062A;&#x06A9;&#x0647;&#x200C;&#x0647;&#x0627;: <b id="stC">0</b></span>
+                <span>&#x062D;&#x0631;&#x0648;&#x0641;: <b id="stCh">0</b></span>
+              </div>
+
+              <div id="asciiMsg" class="alert"></div>
+            </div>
+
+            <div id="res"></div>
+
+            <script>
+              var CHUNKS = [];
+              var MARKERS = [
+                "/* ---------- leagues",
+                "/* ---------- results",
+                "/* ---------- stat model",
+                "/* ---------- settings",
+                "/* ---------- manual odds",
+                "/* ---------- api-football"
+              ];
+              var MAX_L = 450;
+
+              window.onload = function() {
+                var s = "";
+                if (window.Android && window.Android.load) {
+                  s = window.Android.load("raw_code");
+                } else {
+                  s = localStorage.getItem("raw_code") || "";
+                }
+                if (s) {
+                  document.getElementById("src").value = s;
+                  doSplit();
+                }
+              };
+
+              function pasteClip() {
+                var txt = "";
+                if (window.Android && window.Android.clip) {
+                  txt = window.Android.clip();
+                }
+                if (txt) {
+                  document.getElementById("src").value = txt;
+                  doSplit();
+                } else {
+                  alert("\u0645\u062A\u0646\u06CC \u062F\u0631 \u062D\u0627\u0641\u0638\u0647 \u0646\u06CC\u0633\u062A.");
+                }
+              }
+
+              function resetAll() {
+                document.getElementById("src").value = "";
+                document.getElementById("res").innerHTML = "";
+                document.getElementById("stBox").style.display = "none";
+                document.getElementById("asciiMsg").style.display = "none";
+                if (window.Android && window.Android.save) window.Android.save("raw_code", "");
+                localStorage.removeItem("raw_code");
+              }
+
+              function checkAscii(txt) {
+                var bad = [];
+                var lines = txt.split("\n");
+                for (var i = 0; i < lines.length; i++) {
+                  if (/[^\x00-\x7F]/.test(lines[i])) bad.push(i + 1);
+                }
+                return bad;
+              }
+
+              function doSplit() {
+                var txt = document.getElementById("src").value;
+                if (!txt || !txt.trim()) return;
+
+                if (window.Android && window.Android.save) {
+                  window.Android.save("raw_code", txt);
+                } else {
+                  localStorage.setItem("raw_code", txt);
+                }
+
+                var bad = checkAscii(txt);
+                var am = document.getElementById("asciiMsg");
+                am.style.display = "block";
+                if (bad.length > 0) {
+                  am.className = "alert alert-err";
+                  am.innerHTML = "\u26A0\uFE0F <b>\u0647\u0634\u062F\u0627\u0631 ASCII:</b> \u062F\u0631 \u062E\u0637 \u0647\u0627\u06CC (" + bad.slice(0, 5).join(", ") + (bad.length > 5 ? "..." : "") + ") \u062D\u0631\u0648\u0641 \u063A\u06CC\u0631\u0645\u062C\u0627\u0632 \u062F\u06CC\u062F\u0647 \u0634\u062F!";
+                } else {
+                  am.className = "alert alert-ok";
+                  am.innerHTML = "\u2705 <b>\u0639\u0627\u0644\u06CC:</b> \u06A9\u062F \u06F1\u06F0\u06F0\u066A \u0627\u0633\u062A\u0627\u0646\u062F\u0627\u0631\u062F ASCII \u0627\u0633\u062A.";
+                }
+
+                var lines = txt.split("\n");
+                CHUNKS = [];
+                var cur = [];
+
+                for (var i = 0; i < lines.length; i++) {
+                  var line = lines[i];
+                  var isM = false;
+                  for (var m = 0; m < MARKERS.length; m++) {
+                    if (line.indexOf(MARKERS[m]) !== -1) { isM = true; break; }
+                  }
+
+                  if ((isM && cur.length > 100) || cur.length >= MAX_L) {
+                    CHUNKS.push(cur.join("\n"));
+                    cur = [];
+                  }
+                  cur.push(line);
+                }
+                if (cur.length > 0) CHUNKS.push(cur.join("\n"));
+
+                document.getElementById("stBox").style.display = "flex";
+                document.getElementById("stL").innerText = lines.length;
+                document.getElementById("stC").innerText = CHUNKS.length;
+                document.getElementById("stCh").innerText = txt.length;
+
+                var out = "";
+                var stL = 1;
+                for (var c = 0; c < CHUNKS.length; c++) {
+                  var cLines = CHUNKS[c].split("\n").length;
+                  var endL = stL + cLines - 1;
+                  out += '<div class="chunk">' +
+                    '<div class="chunk-top">' +
+                      '<span class="chunk-name">\uD83D\uDCE6 \u062A\u06A9\u0647 ' + (c + 1) + ' \u0627\u0632 ' + CHUNKS.length + '</span>' +
+                      '<span class="chunk-info">\u062E\u0637 ' + stL + ' \u062A\u0627 ' + endL + ' (' + cLines + ' \u062E\u0637)</span>' +
+                    '</div>' +
+                    '<button class="btn-copy" id="b_' + c + '" onclick="copyC(' + c + ')">\uD83D\uDCCB \u06A9\u067E\u06CC \u062A\u06A9\u0647 ' + (c + 1) + '</button>' +
+                  '</div>';
+                  stL = endL + 1;
+                }
+                document.getElementById("res").innerHTML = out;
+              }
+
+              function copyC(idx) {
+                var content = CHUNKS[idx];
+                if (window.Android && window.Android.setClip) {
+                  window.Android.setClip(content);
+                } else {
+                  var ta = document.createElement("textarea");
+                  ta.value = content;
+                  document.body.appendChild(ta);
+                  ta.select();
+                  document.execCommand("copy");
+                  document.body.removeChild(ta);
+                }
+                var btn = document.getElementById("b_" + idx);
+                btn.className = "btn-copy done";
+                btn.innerHTML = "\u2705 \u062A\u06A9\u0647 " + (idx + 1) + " \u06A9\u067E\u06CC \u0634\u062F!";
+                setTimeout(function() {
+                  btn.className = "btn-copy";
+                  btn.innerHTML = "\uD83D\uDCCB \u06A9\u067E\u06CC \u062A\u06A9\u0647 " + (idx + 1);
+                }, 2500);
+              }
+            </script>
+          </body>
+          </html>
+          EOF
+
+      - name: Build APK with Gradle
+        run: gradle assembleRelease
+
+      - name: Upload Artifact APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: CodeSplitter-APK
+          path: app/build/outputs/apk/release/app-release.apk
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/') || github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
+        with:
+          tag_name: v${{ github.run_number }}
+          name: Release v${{ github.run_number }}
+          files: app/build/outputs/apk/release/app-release.apk
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
