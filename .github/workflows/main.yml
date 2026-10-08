@@ -23,10 +23,9 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
-      - name: Setup Keystore
+      - name: Setup Persistent Keystore
         run: |
           if [ ! -f splitter.keystore ]; then
-            echo "Creating persistent release keystore..."
             keytool -genkeypair -v \
               -keystore splitter.keystore \
               -alias splitter \
@@ -42,25 +41,23 @@ jobs:
             git add splitter.keystore
             git commit -m "chore: persist splitter.keystore [skip ci]" || true
             git push || true
-          else
-            echo "splitter.keystore already exists. Using existing signature."
           fi
 
       - name: Accept Android SDK Licenses
         run: yes | sdkmanager --licenses || true
 
-      - name: Scaffold Android App
+      - name: Create Project Folders
         run: |
           mkdir -p app/src/main/java/com/saeed/splitter
           mkdir -p app/src/main/assets
 
-          # 1. gradle.properties
+      - name: Scaffold Gradle Files
+        run: |
           cat << 'EOF' > gradle.properties
           org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8
           android.useAndroidX=true
           EOF
 
-          # 2. settings.gradle
           cat << 'EOF' > settings.gradle
           pluginManagement {
               repositories {
@@ -80,14 +77,12 @@ jobs:
           include ':app'
           EOF
 
-          # 3. root build.gradle
           cat << 'EOF' > build.gradle
           plugins {
               id 'com.android.application' version '8.5.2' apply false
           }
           EOF
 
-          # 4. app/build.gradle
           cat << 'EOF' > app/build.gradle
           plugins {
               id 'com.android.application'
@@ -132,10 +127,8 @@ jobs:
           }
           EOF
 
-          # Replace build number placeholder
-          sed -i 's/__BUILD_NUM__/${{ github.run_number }}/g' app/build.gradle
-
-          # 5. AndroidManifest.xml
+      - name: Scaffold AndroidManifest and Java
+        run: |
           cat << 'EOF' > app/src/main/AndroidManifest.xml
           <?xml version="1.0" encoding="utf-8"?>
           <manifest xmlns:android="http://schemas.android.com/apk/res/android">
@@ -159,7 +152,6 @@ jobs:
           </manifest>
           EOF
 
-          # 6. MainActivity.java
           cat << 'EOF' > app/src/main/java/com/saeed/splitter/MainActivity.java
           package com.saeed.splitter;
 
@@ -332,7 +324,8 @@ jobs:
           }
           EOF
 
-          # 7. index.html
+      - name: Scaffold Assets HTML UI
+        run: |
           cat << 'EOF' > app/src/main/assets/index.html
           <!DOCTYPE html>
           <html lang="fa" dir="rtl">
@@ -392,8 +385,8 @@ jobs:
           <body>
 
             <div class="update-banner" id="updBanner" onclick="openRelease()">
-              <span>\uD83C\uDF89 \u0646\u0633\u062E\u0647 \u062C\u062F\u06CC\u062F \u0645\u0648\u062C\u0648\u062F \u0627\u0633\u062A!</span>
-              <span style="text-decoration:underline;">\u062F\u0627\u0646\u0644\u0648\u062F</span>
+              <span>&#x1F389; &#x0646;&#x0633;&#x062E;&#x0647; &#x062C;&#x062F;&#x06CC;&#x062F; &#x0645;&#x0648;&#x062C;&#x0648;&#x062F; &#x0627;&#x0633;&#x062A;!</span>
+              <span style="text-decoration:underline;">&#x062F;&#x0627;&#x0646;&#x0644;&#x0648;&#x062F;</span>
             </div>
 
             <div id="pg-split" class="page active">
@@ -718,7 +711,9 @@ jobs:
           </html>
           EOF
 
-          # Replace repo and build placeholders in assets
+      - name: Inject Dynamic Build Variables
+        run: |
+          sed -i 's/__BUILD_NUM__/${{ github.run_number }}/g' app/build.gradle
           sed -i 's/__BUILD_NUM__/${{ github.run_number }}/g' app/src/main/assets/index.html
           sed -i 's|__REPO__|${{ github.repository }}|g' app/src/main/assets/index.html
 
