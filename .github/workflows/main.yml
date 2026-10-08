@@ -22,21 +22,18 @@ jobs:
           distribution: 'temurin'
 
       - name: Accept Android SDK Licenses
-        run: |
-          yes | sdkmanager --licenses || true
+        run: yes | sdkmanager --licenses || true
 
       - name: Scaffold Android App
         run: |
           mkdir -p app/src/main/java/com/saeed/splitter
           mkdir -p app/src/main/assets
 
-          # 1. gradle.properties
           cat << 'EOF' > gradle.properties
           org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8
           android.useAndroidX=true
           EOF
 
-          # 2. settings.gradle
           cat << 'EOF' > settings.gradle
           pluginManagement {
               repositories {
@@ -56,38 +53,32 @@ jobs:
           include ':app'
           EOF
 
-          # 3. root build.gradle
           cat << 'EOF' > build.gradle
           plugins {
               id 'com.android.application' version '8.5.2' apply false
           }
           EOF
 
-          # 4. app/build.gradle
           cat << 'EOF' > app/build.gradle
           plugins {
               id 'com.android.application'
           }
-
           android {
               namespace 'com.saeed.splitter'
               compileSdk 34
-
               defaultConfig {
                   applicationId "com.saeed.splitter"
                   minSdk 21
                   targetSdk 34
-                  versionCode 1
-                  versionName "1.0"
+                  versionCode 2
+                  versionName "2.0"
               }
-
               buildTypes {
                   release {
                       minifyEnabled false
                       signingConfig signingConfigs.debug
                   }
               }
-
               compileOptions {
                   sourceCompatibility JavaVersion.VERSION_17
                   targetCompatibility JavaVersion.VERSION_17
@@ -95,7 +86,6 @@ jobs:
           }
           EOF
 
-          # 5. AndroidManifest.xml
           cat << 'EOF' > app/src/main/AndroidManifest.xml
           <?xml version="1.0" encoding="utf-8"?>
           <manifest xmlns:android="http://schemas.android.com/apk/res/android">
@@ -107,7 +97,8 @@ jobs:
                   <activity
                       android:name="com.saeed.splitter.MainActivity"
                       android:exported="true"
-                      android:windowSoftInputMode="adjustResize">
+                      android:windowSoftInputMode="adjustResize"
+                      android:configChanges="orientation|screenSize|keyboardHidden">
                       <intent-filter>
                           <action android:name="android.intent.action.MAIN" />
                           <category android:name="android.intent.category.LAUNCHER" />
@@ -117,7 +108,6 @@ jobs:
           </manifest>
           EOF
 
-          # 6. MainActivity.java
           cat << 'EOF' > app/src/main/java/com/saeed/splitter/MainActivity.java
           package com.saeed.splitter;
 
@@ -131,6 +121,9 @@ jobs:
           import android.webkit.WebSettings;
           import android.webkit.WebView;
           import android.widget.Toast;
+          import java.io.File;
+          import java.io.FileInputStream;
+          import java.io.FileOutputStream;
 
           public class MainActivity extends Activity {
               private WebView webView;
@@ -140,13 +133,16 @@ jobs:
                   super.onCreate(savedInstanceState);
                   webView = new WebView(this);
                   setContentView(webView);
-
                   WebSettings ws = webView.getSettings();
                   ws.setJavaScriptEnabled(true);
                   ws.setDomStorageEnabled(true);
-
                   webView.addJavascriptInterface(new WebBridge(this), "Android");
                   webView.loadUrl("file:///android_asset/index.html");
+              }
+
+              @Override
+              public void onBackPressed() {
+                  webView.evaluateJavascript("window.onBack && window.onBack()", null);
               }
 
               public class WebBridge {
@@ -163,8 +159,8 @@ jobs:
                       try {
                           ClipboardManager cm = (ClipboardManager) ctx.getSystemService(Context.CLIPBOARD_SERVICE);
                           if (cm != null && cm.hasPrimaryClip() && cm.getPrimaryClip().getItemCount() > 0) {
-                              CharSequence text = cm.getPrimaryClip().getItemAt(0).getText();
-                              return text != null ? text.toString() : "";
+                              CharSequence t = cm.getPrimaryClip().getItemAt(0).getText();
+                              return t != null ? t.toString() : "";
                           }
                       } catch (Exception e) {}
                       return "";
@@ -177,10 +173,9 @@ jobs:
                           public void run() {
                               try {
                                   ClipboardManager cm = (ClipboardManager) ctx.getSystemService(Context.CLIPBOARD_SERVICE);
-                                  ClipData cd = ClipData.newPlainText("code_chunk", text);
                                   if (cm != null) {
-                                      cm.setPrimaryClip(cd);
-                                      Toast.makeText(ctx, "\u062A\u06A9\u0647 \u06A9\u067E\u06CC \u0634\u062F", Toast.LENGTH_SHORT).show();
+                                      cm.setPrimaryClip(ClipData.newPlainText("chunk", text));
+                                      Toast.makeText(ctx, "\u06A9\u067E\u06CC \u0634\u062F", Toast.LENGTH_SHORT).show();
                                   }
                               } catch (Exception e) {}
                           }
@@ -196,290 +191,430 @@ jobs:
                   public String load(String k) {
                       return sp.getString(k, "");
                   }
+
+                  @JavascriptInterface
+                  public String basePath() {
+                      return ctx.getFilesDir().getAbsolutePath() + "/projects";
+                  }
+
+                  @JavascriptInterface
+                  public String listDir(String path) {
+                      File dir = new File(path);
+                      if (!dir.exists() || !dir.isDirectory()) return "[]";
+                      File[] files = dir.listFiles();
+                      if (files == null) return "[]";
+                      StringBuilder sb = new StringBuilder("[");
+                      for (int i = 0; i < files.length; i++) {
+                          if (i > 0) sb.append(",");
+                          sb.append("{\"n\":\"").append(files[i].getName().replace("\"", "\\\""))
+                            .append("\",\"t\":\"").append(files[i].isDirectory() ? "d" : "f").append("\"}");
+                      }
+                      sb.append("]");
+                      return sb.toString();
+                  }
+
+                  @JavascriptInterface
+                  public String readFile(String path) {
+                      try {
+                          File f = new File(path);
+                          if (!f.exists()) return "";
+                          FileInputStream fis = new FileInputStream(f);
+                          byte[] data = new byte[(int) f.length()];
+                          fis.read(data);
+                          fis.close();
+                          return new String(data, "UTF-8");
+                      } catch (Exception e) { return ""; }
+                  }
+
+                  @JavascriptInterface
+                  public boolean writeFile(String path, String content) {
+                      try {
+                          File f = new File(path);
+                          if (f.getParentFile() != null) f.getParentFile().mkdirs();
+                          FileOutputStream fos = new FileOutputStream(f);
+                          fos.write(content.getBytes("UTF-8"));
+                          fos.close();
+                          return true;
+                      } catch (Exception e) { return false; }
+                  }
+
+                  @JavascriptInterface
+                  public boolean makeDir(String path) {
+                      return new File(path).mkdirs();
+                  }
+
+                  @JavascriptInterface
+                  public boolean deleteItem(String path) {
+                      File f = new File(path);
+                      if (f.isDirectory()) {
+                          File[] ch = f.listFiles();
+                          if (ch != null) {
+                              for (int i = 0; i < ch.length; i++) {
+                                  deleteItem(ch[i].getAbsolutePath());
+                              }
+                          }
+                      }
+                      return f.delete();
+                  }
+
+                  @JavascriptInterface
+                  public void toast(final String msg) {
+                      runOnUiThread(new Runnable() {
+                          @Override
+                          public void run() {
+                              Toast.makeText(ctx, msg, Toast.LENGTH_SHORT).show();
+                          }
+                      });
+                  }
               }
           }
           EOF
 
-          # 7. index.html
           cat << 'EOF' > app/src/main/assets/index.html
           <!DOCTYPE html>
           <html lang="fa" dir="rtl">
           <head>
             <meta charset="UTF-8">
-            <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+            <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
             <title>&#x0628;&#x0631;&#x0634; &#x06A9;&#x062F;</title>
             <style>
-              * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
-              body {
-                background-color: #0f172a;
-                color: #f8fafc;
-                font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Tahoma, sans-serif;
-                padding: 12px;
-                padding-bottom: 50px;
-              }
-              .head {
-                text-align: center;
-                background: #1e293b;
-                border: 1px solid #334155;
-                border-radius: 12px;
-                padding: 12px;
-                margin-bottom: 12px;
-              }
-              .head h1 { font-size: 1.2rem; color: #38bdf8; margin-bottom: 4px; }
-              .head p { font-size: 0.75rem; color: #94a3b8; }
-              .box {
-                background: #1e293b;
-                border: 1px solid #334155;
-                border-radius: 12px;
-                padding: 12px;
-                margin-bottom: 12px;
-              }
-              textarea {
-                width: 100%;
-                height: 150px;
-                background: #020617;
-                border: 1px solid #475569;
-                border-radius: 8px;
-                color: #e2e8f0;
-                font-family: monospace;
-                font-size: 0.8rem;
-                padding: 10px;
-                resize: none;
-                direction: ltr;
-                text-align: left;
-              }
-              .btn-grid {
-                display: grid;
-                grid-template-columns: 1fr 1fr;
-                gap: 8px;
-                margin-top: 8px;
-              }
-              .btn {
-                border: none;
-                border-radius: 8px;
-                padding: 12px 6px;
-                font-size: 0.85rem;
-                font-weight: bold;
-                color: white;
-                cursor: pointer;
-                text-align: center;
-              }
-              .btn:active { opacity: 0.8; }
-              .btn-blue { background: #0284c7; }
-              .btn-green { background: #16a34a; }
-              .btn-red { background: #dc2626; }
-              .btn-full { grid-column: span 2; }
-              .stats {
-                display: flex;
-                justify-content: space-around;
-                background: #020617;
-                border-radius: 8px;
-                padding: 8px;
-                margin-top: 10px;
-                font-size: 0.75rem;
-                color: #94a3b8;
-              }
-              .stats b { color: #38bdf8; }
-              .alert {
-                padding: 8px 10px;
-                border-radius: 8px;
-                font-size: 0.75rem;
-                margin-top: 8px;
-                display: none;
-              }
-              .alert-err { background: #7f1d1d; color: #fca5a5; }
-              .alert-ok { background: #064e3b; color: #6ee7b7; }
-              .chunk {
-                background: #1e293b;
-                border: 1px solid #334155;
-                border-radius: 10px;
-                padding: 12px;
-                margin-top: 10px;
-              }
-              .chunk-top {
-                display: flex;
-                justify-content: space-between;
-                align-items: center;
-                margin-bottom: 8px;
-              }
-              .chunk-name { color: #fbbf24; font-weight: bold; font-size: 0.9rem; }
-              .chunk-info { color: #94a3b8; font-size: 0.75rem; }
-              .btn-copy {
-                width: 100%;
-                background: #2563eb;
-                color: white;
-                border: none;
-                border-radius: 8px;
-                padding: 12px;
-                font-size: 0.9rem;
-                font-weight: bold;
-              }
-              .btn-copy.done { background: #10b981; }
+              *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+              body{background:#0f172a;color:#f8fafc;font-family:Tahoma,sans-serif;padding:0 0 60px 0;font-size:14px}
+              .tabs{display:flex;position:fixed;bottom:0;left:0;right:0;background:#1e293b;border-top:1px solid #334155;z-index:99}
+              .tab{flex:1;text-align:center;padding:12px 4px;font-size:0.85rem;font-weight:bold;color:#64748b;cursor:pointer}
+              .tab.active{color:#38bdf8;border-top:2px solid #38bdf8}
+              .page{display:none;padding:12px}
+              .page.active{display:block}
+              .head{text-align:center;background:#1e293b;border:1px solid #334155;border-radius:12px;padding:10px;margin-bottom:10px}
+              .head h1{font-size:1.1rem;color:#38bdf8}
+              .head p{font-size:0.7rem;color:#94a3b8}
+              .box{background:#1e293b;border:1px solid #334155;border-radius:10px;padding:10px;margin-bottom:10px}
+              textarea{width:100%;height:130px;background:#020617;border:1px solid #475569;border-radius:8px;color:#e2e8f0;font-family:monospace;font-size:0.75rem;padding:8px;resize:none;direction:ltr;text-align:left}
+              .bg{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:6px}
+              .b{border:none;border-radius:8px;padding:11px 4px;font-size:0.8rem;font-weight:bold;color:#fff;cursor:pointer;text-align:center}
+              .b:active{opacity:0.7}
+              .b-g{background:#16a34a}.b-b{background:#0284c7}.b-r{background:#dc2626}.b-y{background:#d97706}
+              .b-f{grid-column:span 2}
+              .st{display:flex;justify-content:space-around;background:#020617;border-radius:6px;padding:6px;margin-top:8px;font-size:0.7rem;color:#94a3b8}
+              .st b{color:#38bdf8}
+              .al{padding:6px 8px;border-radius:6px;font-size:0.7rem;margin-top:6px;display:none}
+              .al-e{background:#7f1d1d;color:#fca5a5}.al-o{background:#064e3b;color:#6ee7b7}
+              .ck{background:#1e293b;border:1px solid #334155;border-radius:8px;padding:10px;margin-top:8px}
+              .ck-t{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px}
+              .ck-n{color:#fbbf24;font-weight:bold;font-size:0.85rem}
+              .ck-i{color:#94a3b8;font-size:0.7rem}
+              .bc{width:100%;background:#2563eb;color:#fff;border:none;border-radius:8px;padding:10px;font-size:0.85rem;font-weight:bold}
+              .bc.done{background:#10b981}
+              .nav{display:flex;align-items:center;gap:8px;margin-bottom:10px}
+              .nav-b{background:#334155;color:#e2e8f0;border:none;border-radius:8px;padding:8px 12px;font-size:0.8rem;cursor:pointer}
+              .nav-t{font-size:0.95rem;font-weight:bold;color:#f59e0b;flex:1}
+              .item{background:#1e293b;border:1px solid #334155;border-radius:8px;padding:12px;margin-bottom:6px;display:flex;justify-content:space-between;align-items:center;cursor:pointer}
+              .item:active{background:#334155}
+              .item-n{font-size:0.9rem;font-weight:bold}
+              .item-m{font-size:0.7rem;color:#94a3b8}
+              .item-d{background:#7f1d1d;color:#fca5a5;border:none;border-radius:6px;padding:6px 10px;font-size:0.7rem;cursor:pointer}
+              .empty{text-align:center;color:#64748b;padding:30px 10px;font-size:0.85rem}
+              .ed-head{display:flex;gap:6px;margin-bottom:8px}
+              .ed-name{flex:1;background:#020617;border:1px solid #475569;border-radius:6px;color:#e2e8f0;padding:8px;font-size:0.8rem}
+              .ed-area{width:100%;height:calc(100vh - 220px);background:#020617;border:1px solid #475569;border-radius:8px;color:#e2e8f0;font-family:monospace;font-size:0.75rem;padding:8px;resize:none;direction:ltr;text-align:left}
+              .modal-bg{display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.7);z-index:100;justify-content:center;align-items:center}
+              .modal-bg.show{display:flex}
+              .modal{background:#1e293b;border:1px solid #475569;border-radius:12px;padding:16px;width:85%;max-width:320px}
+              .modal h3{color:#38bdf8;margin-bottom:10px;font-size:0.95rem}
+              .modal input{width:100%;background:#020617;border:1px solid #475569;border-radius:6px;color:#e2e8f0;padding:10px;font-size:0.9rem;margin-bottom:10px}
+              .modal-btns{display:flex;gap:8px}
+              .modal-btns .b{flex:1}
             </style>
           </head>
           <body>
-            <div class="head">
-              <h1>&#x2702;&#xFE0F; &#x0627;&#x0628;&#x0632;&#x0627;&#x0631; &#x0628;&#x0631;&#x0634; &#x06A9;&#x062F;</h1>
-              <p>&#x0645;&#x062E;&#x0635;&#x0648;&#x0635; &#x06AF;&#x0648;&#x0634;&#x06CC; &#x0648; &#x0686;&#x062A;&#x200C;&#x0628;&#x0627;&#x062A;</p>
+
+            <div id="pg-split" class="page active">
+              <div class="head">
+                <h1>&#x2702;&#xFE0F; &#x0627;&#x0628;&#x0632;&#x0627;&#x0631; &#x0628;&#x0631;&#x0634; &#x06A9;&#x062F;</h1>
+                <p>&#x0645;&#x062E;&#x0635;&#x0648;&#x0635; &#x06AF;&#x0648;&#x0634;&#x06CC; &#x0648; &#x0686;&#x062A;&#x200C;&#x0628;&#x0627;&#x062A;</p>
+              </div>
+              <div class="box">
+                <textarea id="src" placeholder="&#x06A9;&#x062F; &#x0631;&#x0627; &#x0627;&#x06CC;&#x0646;&#x062C;&#x0627; &#x067E;&#x06CC;&#x0633;&#x062A; &#x06A9;&#x0646;&#x06CC;&#x062F;..."></textarea>
+                <div class="bg">
+                  <button class="b b-g b-f" onclick="doSplit()">&#x26A1; &#x0628;&#x0631;&#x0634; &#x0647;&#x0648;&#x0634;&#x0645;&#x0646;&#x062F;</button>
+                  <button class="b b-b" onclick="pasteClip()">&#x1F4CB; &#x067E;&#x06CC;&#x0633;&#x062A;</button>
+                  <button class="b b-r" onclick="resetSplit()">&#x1F5D1;&#xFE0F; &#x067E;&#x0627;&#x06A9;</button>
+                </div>
+                <div class="st" id="stBox" style="display:none">
+                  <span>&#x062E;&#x0637;: <b id="stL">0</b></span>
+                  <span>&#x062A;&#x06A9;&#x0647;: <b id="stC">0</b></span>
+                  <span>&#x062D;&#x0631;&#x0641;: <b id="stCh">0</b></span>
+                </div>
+                <div id="asciiMsg" class="al"></div>
+              </div>
+              <div id="res"></div>
             </div>
 
-            <div class="box">
-              <textarea id="src" placeholder="&#x06A9;&#x062F; &#x0631;&#x0627; &#x0627;&#x06CC;&#x0646;&#x062C;&#x0627; &#x067E;&#x06CC;&#x0633;&#x062A; &#x06A9;&#x0646;&#x06CC;&#x062F;..."></textarea>
-              
-              <div class="btn-grid">
-                <button class="btn btn-green btn-full" onclick="doSplit()">&#x26A1; &#x0628;&#x0631;&#x0634; &#x0647;&#x0648;&#x0634;&#x0645;&#x0646;&#x062F; &#x06A9;&#x062F;</button>
-                <button class="btn btn-blue" onclick="pasteClip()">&#xD83D;&#xDCCB; &#x067E;&#x06CC;&#x0633;&#x062A; &#x0633;&#x0631;&#x06CC;&#x0639;</button>
-                <button class="btn btn-red" onclick="resetAll()">&#xD83D;&#xDDD1;&#xFE0F; &#x067E;&#x0627;&#x06A9; &#x06A9;&#x0631;&#x062F;&#x0646;</button>
-              </div>
-
-              <div class="stats" id="stBox" style="display:none;">
-                <span>&#x062E;&#x0637;&#x200C;&#x0647;&#x0627;: <b id="stL">0</b></span>
-                <span>&#x062A;&#x06A9;&#x0647;&#x200C;&#x0647;&#x0627;: <b id="stC">0</b></span>
-                <span>&#x062D;&#x0631;&#x0648;&#x0641;: <b id="stCh">0</b></span>
-              </div>
-
-              <div id="asciiMsg" class="alert"></div>
+            <div id="pg-proj" class="page">
+              <div id="proj-view"></div>
             </div>
 
-            <div id="res"></div>
+            <div class="modal-bg" id="modalBg">
+              <div class="modal">
+                <h3 id="modalTitle"></h3>
+                <input id="modalInput" placeholder="" />
+                <div class="modal-btns">
+                  <button class="b b-g" onclick="modalOk()">&#x2705; &#x062A;&#x0623;&#x06CC;&#x06CC;&#x062F;</button>
+                  <button class="b b-r" onclick="modalClose()">&#x274C; &#x0644;&#x063A;&#x0648;</button>
+                </div>
+              </div>
+            </div>
+
+            <div class="tabs">
+              <div class="tab active" id="tb-split" onclick="goTab('split')">&#x2702;&#xFE0F; &#x0628;&#x0631;&#x0634; &#x06A9;&#x062F;</div>
+              <div class="tab" id="tb-proj" onclick="goTab('proj')">&#x1F4C1; &#x067E;&#x0631;&#x0648;&#x0698;&#x0647;&#x200C;&#x0647;&#x0627;</div>
+            </div>
 
             <script>
-              var CHUNKS = [];
-              var MARKERS = [
-                "/* ---------- leagues",
-                "/* ---------- results",
-                "/* ---------- stat model",
-                "/* ---------- settings",
-                "/* ---------- manual odds",
-                "/* ---------- api-football"
-              ];
-              var MAX_L = 450;
+              var CHUNKS=[];
+              var MARKERS=["/* ---------- leagues","/* ---------- results","/* ---------- stat model","/* ---------- settings","/* ---------- manual odds","/* ---------- api-football"];
+              var MAX_L=450;
+              var BP="";
+              var curProj="",curFolder="",curFile="";
+              var modalCb=null;
 
-              window.onload = function() {
-                var s = "";
-                if (window.Android && window.Android.load) {
-                  s = window.Android.load("raw_code");
-                } else {
-                  s = localStorage.getItem("raw_code") || "";
-                }
-                if (s) {
-                  document.getElementById("src").value = s;
-                  doSplit();
-                }
+              window.onload=function(){
+                if(window.Android&&window.Android.basePath) BP=window.Android.basePath();
+                else BP="/data/data/com.saeed.splitter/files/projects";
+                var s="";
+                if(window.Android&&window.Android.load) s=window.Android.load("raw_code");
+                else s=localStorage.getItem("raw_code")||"";
+                if(s){document.getElementById("src").value=s;doSplit();}
+                renderProjList();
               };
 
-              function pasteClip() {
-                var txt = "";
-                if (window.Android && window.Android.clip) {
-                  txt = window.Android.clip();
-                }
-                if (txt) {
-                  document.getElementById("src").value = txt;
-                  doSplit();
-                } else {
-                  alert("\u0645\u062A\u0646\u06CC \u062F\u0631 \u062D\u0627\u0641\u0638\u0647 \u0646\u06CC\u0633\u062A.");
-                }
+              window.onBack=function(){
+                var pp=document.getElementById("pg-proj");
+                if(pp.className.indexOf("active")===-1) return false;
+                if(curFile){curFile="";renderFileList();return true;}
+                if(curFolder){curFolder="";renderFolderList();return true;}
+                if(curProj){curProj="";renderProjList();return true;}
+                goTab("split");return true;
+              };
+
+              function goTab(t){
+                document.getElementById("pg-split").className=t==="split"?"page active":"page";
+                document.getElementById("pg-proj").className=t==="proj"?"page active":"page";
+                document.getElementById("tb-split").className=t==="split"?"tab active":"tab";
+                document.getElementById("tb-proj").className=t==="proj"?"tab active":"tab";
+                if(t==="proj"&&!curProj) renderProjList();
               }
 
-              function resetAll() {
-                document.getElementById("src").value = "";
-                document.getElementById("res").innerHTML = "";
-                document.getElementById("stBox").style.display = "none";
-                document.getElementById("asciiMsg").style.display = "none";
-                if (window.Android && window.Android.save) window.Android.save("raw_code", "");
+              function pasteClip(){
+                var t="";
+                if(window.Android&&window.Android.clip) t=window.Android.clip();
+                if(t){document.getElementById("src").value=t;doSplit();}
+                else alert("\u0645\u062A\u0646\u06CC \u062F\u0631 \u062D\u0627\u0641\u0638\u0647 \u0646\u06CC\u0633\u062A.");
+              }
+
+              function resetSplit(){
+                document.getElementById("src").value="";
+                document.getElementById("res").innerHTML="";
+                document.getElementById("stBox").style.display="none";
+                document.getElementById("asciiMsg").style.display="none";
+                if(window.Android&&window.Android.save) window.Android.save("raw_code","");
                 localStorage.removeItem("raw_code");
               }
 
-              function checkAscii(txt) {
-                var bad = [];
-                var lines = txt.split("\n");
-                for (var i = 0; i < lines.length; i++) {
-                  if (/[^\x00-\x7F]/.test(lines[i])) bad.push(i + 1);
+              function doSplit(){
+                var txt=document.getElementById("src").value;
+                if(!txt||!txt.trim()) return;
+                if(window.Android&&window.Android.save) window.Android.save("raw_code",txt);
+                else localStorage.setItem("raw_code",txt);
+                var bad=[];var lines=txt.split("\n");
+                for(var i=0;i<lines.length;i++) if(/[^\x00-\x7F]/.test(lines[i])) bad.push(i+1);
+                var am=document.getElementById("asciiMsg");am.style.display="block";
+                if(bad.length>0){am.className="al al-e";am.innerHTML="\u26A0\uFE0F \u0647\u0634\u062F\u0627\u0631 ASCII: \u062E\u0637 "+bad.slice(0,5).join(",")+(bad.length>5?"...":"");}
+                else{am.className="al al-o";am.innerHTML="\u2705 \u06A9\u062F 100% ASCII \u0627\u0633\u062A.";}
+                CHUNKS=[];var cur=[];
+                for(var i=0;i<lines.length;i++){
+                  var isM=false;
+                  for(var m=0;m<MARKERS.length;m++) if(lines[i].indexOf(MARKERS[m])!==-1){isM=true;break;}
+                  if((isM&&cur.length>100)||cur.length>=MAX_L){CHUNKS.push(cur.join("\n"));cur=[];}
+                  cur.push(lines[i]);
                 }
-                return bad;
+                if(cur.length>0) CHUNKS.push(cur.join("\n"));
+                document.getElementById("stBox").style.display="flex";
+                document.getElementById("stL").innerText=lines.length;
+                document.getElementById("stC").innerText=CHUNKS.length;
+                document.getElementById("stCh").innerText=txt.length;
+                var out="";var stL=1;
+                for(var c=0;c<CHUNKS.length;c++){
+                  var cl=CHUNKS[c].split("\n").length;var endL=stL+cl-1;
+                  out+='<div class="ck"><div class="ck-t"><span class="ck-n">\uD83D\uDCE6 \u062A\u06A9\u0647 '+(c+1)+' \u0627\u0632 '+CHUNKS.length+'</span><span class="ck-i">\u062E\u0637 '+stL+' \u062A\u0627 '+endL+' ('+cl+' \u062E\u0637)</span></div><button class="bc" id="b_'+c+'" onclick="copyC('+c+')">\uD83D\uDCCB \u06A9\u067E\u06CC \u062A\u06A9\u0647 '+(c+1)+'</button></div>';
+                  stL=endL+1;
+                }
+                document.getElementById("res").innerHTML=out;
               }
 
-              function doSplit() {
-                var txt = document.getElementById("src").value;
-                if (!txt || !txt.trim()) return;
-
-                if (window.Android && window.Android.save) {
-                  window.Android.save("raw_code", txt);
-                } else {
-                  localStorage.setItem("raw_code", txt);
-                }
-
-                var bad = checkAscii(txt);
-                var am = document.getElementById("asciiMsg");
-                am.style.display = "block";
-                if (bad.length > 0) {
-                  am.className = "alert alert-err";
-                  am.innerHTML = "\u26A0\uFE0F <b>\u0647\u0634\u062F\u0627\u0631 ASCII:</b> \u062F\u0631 \u062E\u0637 \u0647\u0627\u06CC (" + bad.slice(0, 5).join(", ") + (bad.length > 5 ? "..." : "") + ") \u062D\u0631\u0648\u0641 \u063A\u06CC\u0631\u0645\u062C\u0627\u0632 \u062F\u06CC\u062F\u0647 \u0634\u062F!";
-                } else {
-                  am.className = "alert alert-ok";
-                  am.innerHTML = "\u2705 <b>\u0639\u0627\u0644\u06CC:</b> \u06A9\u062F \u06F1\u06F0\u06F0\u066A \u0627\u0633\u062A\u0627\u0646\u062F\u0627\u0631\u062F ASCII \u0627\u0633\u062A.";
-                }
-
-                var lines = txt.split("\n");
-                CHUNKS = [];
-                var cur = [];
-
-                for (var i = 0; i < lines.length; i++) {
-                  var line = lines[i];
-                  var isM = false;
-                  for (var m = 0; m < MARKERS.length; m++) {
-                    if (line.indexOf(MARKERS[m]) !== -1) { isM = true; break; }
-                  }
-
-                  if ((isM && cur.length > 100) || cur.length >= MAX_L) {
-                    CHUNKS.push(cur.join("\n"));
-                    cur = [];
-                  }
-                  cur.push(line);
-                }
-                if (cur.length > 0) CHUNKS.push(cur.join("\n"));
-
-                document.getElementById("stBox").style.display = "flex";
-                document.getElementById("stL").innerText = lines.length;
-                document.getElementById("stC").innerText = CHUNKS.length;
-                document.getElementById("stCh").innerText = txt.length;
-
-                var out = "";
-                var stL = 1;
-                for (var c = 0; c < CHUNKS.length; c++) {
-                  var cLines = CHUNKS[c].split("\n").length;
-                  var endL = stL + cLines - 1;
-                  out += '<div class="chunk">' +
-                    '<div class="chunk-top">' +
-                      '<span class="chunk-name">\uD83D\uDCE6 \u062A\u06A9\u0647 ' + (c + 1) + ' \u0627\u0632 ' + CHUNKS.length + '</span>' +
-                      '<span class="chunk-info">\u062E\u0637 ' + stL + ' \u062A\u0627 ' + endL + ' (' + cLines + ' \u062E\u0637)</span>' +
-                    '</div>' +
-                    '<button class="btn-copy" id="b_' + c + '" onclick="copyC(' + c + ')">\uD83D\uDCCB \u06A9\u067E\u06CC \u062A\u06A9\u0647 ' + (c + 1) + '</button>' +
-                  '</div>';
-                  stL = endL + 1;
-                }
-                document.getElementById("res").innerHTML = out;
+              function copyC(idx){
+                var content=CHUNKS[idx];
+                if(window.Android&&window.Android.setClip) window.Android.setClip(content);
+                else{var ta=document.createElement("textarea");ta.value=content;document.body.appendChild(ta);ta.select();document.execCommand("copy");document.body.removeChild(ta);}
+                var btn=document.getElementById("b_"+idx);btn.className="bc done";btn.innerHTML="\u2705 \u06A9\u067E\u06CC \u0634\u062F!";
+                setTimeout(function(){btn.className="bc";btn.innerHTML="\uD83D\uDCCB \u06A9\u067E\u06CC \u062A\u06A9\u0647 "+(idx+1);},2500);
               }
 
-              function copyC(idx) {
-                var content = CHUNKS[idx];
-                if (window.Android && window.Android.setClip) {
-                  window.Android.setClip(content);
-                } else {
-                  var ta = document.createElement("textarea");
-                  ta.value = content;
-                  document.body.appendChild(ta);
-                  ta.select();
-                  document.execCommand("copy");
-                  document.body.removeChild(ta);
+              function showModal(title,placeholder,cb){
+                document.getElementById("modalTitle").innerText=title;
+                document.getElementById("modalInput").placeholder=placeholder;
+                document.getElementById("modalInput").value="";
+                document.getElementById("modalBg").className="modal-bg show";
+                modalCb=cb;
+                setTimeout(function(){document.getElementById("modalInput").focus();},300);
+              }
+
+              function modalClose(){document.getElementById("modalBg").className="modal-bg";modalCb=null;}
+
+              function modalOk(){
+                var v=document.getElementById("modalInput").value.trim();
+                if(!v){alert("\u0644\u0637\u0641\u0627\u064B \u0646\u0627\u0645 \u0631\u0627 \u0648\u0627\u0631\u062F \u06A9\u0646\u06CC\u062F.");return;}
+                if(v.indexOf("/")!==-1||v.indexOf("\\")!==-1){alert("\u0646\u0627\u0645 \u0646\u0628\u0627\u06CC\u062F \u0634\u0627\u0645\u0644 / \u06CC\u0627 \\ \u0628\u0627\u0634\u062F.");return;}
+                document.getElementById("modalBg").className="modal-bg";
+                if(modalCb) modalCb(v);
+                modalCb=null;
+              }
+
+              function ls(path){
+                var r="[]";
+                if(window.Android&&window.Android.listDir) r=window.Android.listDir(path);
+                try{return JSON.parse(r);}catch(e){return[];}
+              }
+
+              function renderProjList(){
+                curProj="";curFolder="";curFile="";
+                var items=ls(BP);
+                var dirs=[];
+                for(var i=0;i<items.length;i++) if(items[i].t==="d") dirs.push(items[i].n);
+                dirs.sort();
+                var h='<div class="head"><h1>\uD83D\uDCC1 \u067E\u0631\u0648\u0698\u0647\u200C\u0647\u0627</h1><p>\u0645\u062F\u06CC\u0631\u06CC\u062A \u0641\u0627\u06CC\u0644\u200C\u0647\u0627\u06CC \u06A9\u062F \u0648 \u06AF\u0632\u0627\u0631\u0634 \u062E\u0637\u0627</p></div>';
+                h+='<button class="b b-g" style="width:100%;margin-bottom:10px" onclick="newProj()">\u2795 \u067E\u0631\u0648\u0698\u0647 \u062C\u062F\u06CC\u062F</button>';
+                if(dirs.length===0) h+='<div class="empty">\u0647\u0646\u0648\u0632 \u067E\u0631\u0648\u0698\u0647\u200C\u0627\u06CC \u0633\u0627\u062E\u062A\u0647 \u0646\u0634\u062F\u0647.<br>\u062F\u06A9\u0645\u0647 \u0628\u0627\u0644\u0627 \u0631\u0627 \u0628\u0632\u0646\u06CC\u062F.</div>';
+                for(var i=0;i<dirs.length;i++){
+                  h+='<div class="item" onclick="openProj(\''+dirs[i].replace(/'/g,"\\'")+'\')"><div><div class="item-n">\uD83D\uDCC2 '+dirs[i]+'</div><div class="item-m">\u067E\u0631\u0648\u0698\u0647</div></div><button class="item-d" onclick="event.stopPropagation();delProj(\''+dirs[i].replace(/'/g,"\\'")+'\')">\u062D\u0630\u0641</button></div>';
                 }
-                var btn = document.getElementById("b_" + idx);
-                btn.className = "btn-copy done";
-                btn.innerHTML = "\u2705 \u062A\u06A9\u0647 " + (idx + 1) + " \u06A9\u067E\u06CC \u0634\u062F!";
-                setTimeout(function() {
-                  btn.className = "btn-copy";
-                  btn.innerHTML = "\uD83D\uDCCB \u06A9\u067E\u06CC \u062A\u06A9\u0647 " + (idx + 1);
-                }, 2500);
+                document.getElementById("proj-view").innerHTML=h;
+              }
+
+              function newProj(){
+                showModal("\u067E\u0631\u0648\u0698\u0647 \u062C\u062F\u06CC\u062F","\u0646\u0627\u0645 \u067E\u0631\u0648\u0698\u0647",function(name){
+                  if(window.Android&&window.Android.makeDir) window.Android.makeDir(BP+"/"+name);
+                  renderProjList();
+                });
+              }
+
+              function openProj(name){curProj=name;curFolder="";renderFolderList();}
+
+              function delProj(name){
+                if(!confirm("\u067E\u0631\u0648\u0698\u0647 \""+name+"\" \u0648 \u0647\u0645\u0647 \u0641\u0627\u06CC\u0644\u200C\u0647\u0627\u06CC\u0634 \u062D\u0630\u0641 \u0634\u0648\u062F\u061F")) return;
+                if(window.Android&&window.Android.deleteItem) window.Android.deleteItem(BP+"/"+name);
+                renderProjList();
+              }
+
+              function renderFolderList(){
+                curFolder="";curFile="";
+                var path=BP+"/"+curProj;
+                var items=ls(path);
+                var dirs=[];var files=[];
+                for(var i=0;i<items.length;i++){if(items[i].t==="d") dirs.push(items[i].n);else files.push(items[i].n);}
+                dirs.sort();files.sort();
+                var h='<div class="nav"><button class="nav-b" onclick="renderProjList()">\u2190 \u0628\u0631\u06AF\u0634\u062A</button><span class="nav-t">\uD83D\uDCC2 '+curProj+'</span></div>';
+                h+='<button class="b b-g" style="width:100%;margin-bottom:6px" onclick="newFolder()">\u2795 \u067E\u0648\u0634\u0647 \u062C\u062F\u06CC\u062F</button>';
+                h+='<button class="b b-b" style="width:100%;margin-bottom:10px" onclick="newFileHere()">\u2795 \u0641\u0627\u06CC\u0644 \u062C\u062F\u06CC\u062F \u062F\u0631 \u0631\u06CC\u0634\u0647</button>';
+                if(dirs.length===0&&files.length===0) h+='<div class="empty">\u0627\u06CC\u0646 \u067E\u0631\u0648\u0698\u0647 \u062E\u0627\u0644\u06CC \u0627\u0633\u062A.</div>';
+                for(var i=0;i<dirs.length;i++){
+                  h+='<div class="item" onclick="openFolder(\''+dirs[i].replace(/'/g,"\\'")+'\')"><div><div class="item-n">\uD83D\uDCC1 '+dirs[i]+'</div><div class="item-m">\u067E\u0648\u0634\u0647</div></div><button class="item-d" onclick="event.stopPropagation();delItem(\''+path+'/'+dirs[i].replace(/'/g,"\\'")+'\',true)">\u062D\u0630\u0641</button></div>';
+                }
+                for(var i=0;i<files.length;i++){
+                  h+='<div class="item" onclick="openFile(\''+files[i].replace(/'/g,"\\'")+'\',\''+path.replace(/'/g,"\\'")+'\')"><div><div class="item-n">\uD83D\uDCC4 '+files[i]+'</div><div class="item-m">\u0641\u0627\u06CC\u0644</div></div><button class="item-d" onclick="event.stopPropagation();delItem(\''+path+'/'+files[i].replace(/'/g,"\\'")+'\',false)">\u062D\u0630\u0641</button></div>';
+                }
+                document.getElementById("proj-view").innerHTML=h;
+              }
+
+              function newFolder(){
+                showModal("\u067E\u0648\u0634\u0647 \u062C\u062F\u06CC\u062F","\u0646\u0627\u0645 \u067E\u0648\u0634\u0647 (\u0645\u062B\u0644\u0627\u064B: \u062E\u0637\u0627\u0647\u0627)",function(name){
+                  if(window.Android&&window.Android.makeDir) window.Android.makeDir(BP+"/"+curProj+"/"+name);
+                  renderFolderList();
+                });
+              }
+
+              function newFileHere(){
+                showModal("\u0641\u0627\u06CC\u0644 \u062C\u062F\u06CC\u062F","\u0646\u0627\u0645 \u0641\u0627\u06CC\u0644 (\u0645\u062B\u0644\u0627\u064B: bug.txt)",function(name){
+                  var path=BP+"/"+curProj+"/"+name;
+                  if(window.Android&&window.Android.writeFile) window.Android.writeFile(path,"");
+                  openFile(name,BP+"/"+curProj);
+                });
+              }
+
+              function openFolder(name){curFolder=name;renderFileList();}
+
+              function renderFileList(){
+                curFile="";
+                var path=BP+"/"+curProj+"/"+curFolder;
+                var items=ls(path);
+                var files=[];
+                for(var i=0;i<items.length;i++) if(items[i].t==="f") files.push(items[i].n);
+                files.sort();
+                var h='<div class="nav"><button class="nav-b" onclick="renderFolderList()">\u2190 \u0628\u0631\u06AF\u0634\u062A</button><span class="nav-t">\uD83D\uDCC1 '+curProj+' / '+curFolder+'</span></div>';
+                h+='<button class="b b-b" style="width:100%;margin-bottom:10px" onclick="newFileInFolder()">\u2795 \u0641\u0627\u06CC\u0644 \u062C\u062F\u06CC\u062F</button>';
+                if(files.length===0) h+='<div class="empty">\u0627\u06CC\u0646 \u067E\u0648\u0634\u0647 \u062E\u0627\u0644\u06CC \u0627\u0633\u062A.</div>';
+                for(var i=0;i<files.length;i++){
+                  h+='<div class="item" onclick="openFile(\''+files[i].replace(/'/g,"\\'")+'\',\''+path.replace(/'/g,"\\'")+'\')"><div><div class="item-n">\uD83D\uDCC4 '+files[i]+'</div><div class="item-m">\u0641\u0627\u06CC\u0644</div></div><button class="item-d" onclick="event.stopPropagation();delItem(\''+path+'/'+files[i].replace(/'/g,"\\'")+'\',false)">\u062D\u0630\u0641</button></div>';
+                }
+                document.getElementById("proj-view").innerHTML=h;
+              }
+
+              function newFileInFolder(){
+                showModal("\u0641\u0627\u06CC\u0644 \u062C\u062F\u06CC\u062F","\u0646\u0627\u0645 \u0641\u0627\u06CC\u0644 (\u0645\u062B\u0644\u0627\u064B: error_log.txt)",function(name){
+                  var path=BP+"/"+curProj+"/"+curFolder+"/"+name;
+                  if(window.Android&&window.Android.writeFile) window.Android.writeFile(path,"");
+                  openFile(name,BP+"/"+curProj+"/"+curFolder);
+                });
+              }
+
+              function openFile(name,dirPath){
+                curFile=name;
+                var fullPath=dirPath+"/"+name;
+                var content="";
+                if(window.Android&&window.Android.readFile) content=window.Android.readFile(fullPath);
+                var h='<div class="nav"><button class="nav-b" onclick="backFromFile(\''+dirPath.replace(/'/g,"\\'")+'\')">\u2190 \u0628\u0631\u06AF\u0634\u062A</button><span class="nav-t">\uD83D\uDCC4 '+name+'</span></div>';
+                h+='<div class="ed-head"><button class="b b-g" style="flex:1" onclick="saveFile(\''+fullPath.replace(/'/g,"\\'")+'\')">\uD83D\uDCBE \u0630\u062E\u06CC\u0631\u0647</button><button class="b b-b" style="flex:1" onclick="copyFileContent()">\uD83D\uDCCB \u06A9\u067E\u06CC \u06A9\u0644</button></div>';
+                h+='<textarea class="ed-area" id="edArea">'+content.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;")+'</textarea>';
+                document.getElementById("proj-view").innerHTML=h;
+              }
+
+              function backFromFile(dirPath){
+                curFile="";
+                if(curFolder) renderFileList();
+                else renderFolderList();
+              }
+
+              function saveFile(fullPath){
+                var content=document.getElementById("edArea").value;
+                if(window.Android&&window.Android.writeFile){
+                  var ok=window.Android.writeFile(fullPath,content);
+                  if(ok&&window.Android.toast) window.Android.toast("\u2705 \u0630\u062E\u06CC\u0631\u0647 \u0634\u062F");
+                  else if(!ok) alert("\u062E\u0637\u0627 \u062F\u0631 \u0630\u062E\u06CC\u0631\u0647!");
+                }
+              }
+
+              function copyFileContent(){
+                var content=document.getElementById("edArea").value;
+                if(window.Android&&window.Android.setClip) window.Android.setClip(content);
+                else{var ta=document.createElement("textarea");ta.value=content;document.body.appendChild(ta);ta.select();document.execCommand("copy");document.body.removeChild(ta);}
+              }
+
+              function delItem(path,isDir){
+                var msg=isDir?"\u067E\u0648\u0634\u0647 \u0648 \u0647\u0645\u0647 \u0645\u062D\u062A\u0648\u06CC\u0627\u062A\u0634 \u062D\u0630\u0641 \u0634\u0648\u062F\u061F":"\u0641\u0627\u06CC\u0644 \u062D\u0630\u0641 \u0634\u0648\u062F\u061F";
+                if(!confirm(msg)) return;
+                if(window.Android&&window.Android.deleteItem) window.Android.deleteItem(path);
+                if(curFolder) renderFileList();
+                else renderFolderList();
               }
             </script>
           </body>
@@ -494,18 +629,18 @@ jobs:
       - name: Build APK
         run: gradle assembleRelease --stacktrace
 
-      - name: Upload Artifact APK
+      - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
           name: CodeSplitter-APK
           path: app/build/outputs/apk/release/app-release.apk
 
-      - name: Create GitHub Release
+      - name: Create Release
         uses: softprops/action-gh-release@v2
-        if: startsWith(github.ref, 'refs/tags/') || github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
+        if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
         with:
           tag_name: v${{ github.run_number }}
-          name: Release v${{ github.run_number }}
+          name: Code Splitter v${{ github.run_number }}
           files: app/build/outputs/apk/release/app-release.apk
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
