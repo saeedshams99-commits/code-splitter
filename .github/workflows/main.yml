@@ -518,7 +518,7 @@ jobs:
                 var t="";
                 if(window.Android&&window.Android.clip) t=window.Android.clip();
                 if(t){document.getElementById("src").value=t;doSplit();}
-                else alert("\u0645\u062A\u0646\u06CC \u062F\u0631 \u062D\u0627\u0641\u0638\u0647 \u0646\u06CC\u0633\u062A.");
+                else alert("&#x0645;&#x062A;&#x0646;&#x06CC; &#x062F;&#x0631; &#x062D;&#x0627;&#x0641;&#x0638;&#x0647; &#x0646;&#x06CC;&#x0633;&#x062A;.");
               }
 
               function resetSplit(){
@@ -538,8 +538,8 @@ jobs:
                 var bad=[];var lines=txt.split("\n");
                 for(var i=0;i<lines.length;i++) if(/[^\x00-\x7F]/.test(lines[i])) bad.push(i+1);
                 var am=document.getElementById("asciiMsg");am.style.display="block";
-                if(bad.length>0){am.className="al al-e";am.innerHTML="\u26A0\uFE0F \u0647\u0634\u062F\u0627\u0631 ASCII: \u062E\u0637 "+bad.slice(0,5).join(",")+(bad.length>5?"...":"");}
-                else{am.className="al al-o";am.innerHTML="\u2705 \u06A9\u062F 100% ASCII \u0627\u0633\u062A.";}
+                if(bad.length>0){am.className="al al-e";am.innerHTML="&#x26A0;&#xFE0F; &#x0647;&#x0634;&#x062F;&#x0627;&#x0631; ASCII: &#x062E;&#x0637; "+bad.slice(0,5).join(",")+(bad.length>5?"...":"");}
+                else{am.className="al al-o";am.innerHTML="&#x2705; &#x06A9;&#x062F; 100% ASCII &#x0627;&#x0633;&#x062A;.";}
                 
                 CHUNKS=[];
                 var cur=[];
@@ -572,7 +572,7 @@ jobs:
                 var out="";var stL=1;
                 for(var c=0;c<CHUNKS.length;c++){
                   var cl=CHUNKS[c].split("\n").length;var endL=stL+cl-1;
-                  out+='<div class="ck"><div class="ck-t"><span class="ck-n">\uD83D\uDCE6 \u062A\u06A9\u0647 '+(c+1)+' \u0627\u0632 '+CHUNKS.length+'</span><span class="ck-i">\u062E\u0637 '+stL+' \u062A\u0627 '+endL+' ('+cl+' \u062E\u0637)</span></div><button class="bc" id="b_'+c+'" onclick="copyC('+c+')">\uD83D\uDCCB \u06A9\u067E\u06CC \u062A\u06A9\u0647 '+(c+1)+'</button></div>';
+                  out+='<div class="ck"><div class="ck-t"><span class="ck-n">&#x1F4E6; &#x062A;&#x06A9;&#x0647; '+(c+1)+' &#x0627;&#x0632; '+CHUNKS.length+'</span><span class="ck-i">&#x062E;&#x0637; '+stL+' &#x062A;&#x0627; '+endL+' ('+cl+' &#x062E;&#x0637;)</span></div><button class="bc" id="b_'+c+'" onclick="copyC('+c+')">&#x1F4CB; &#x06A9;&#x067E;&#x06CC; &#x062A;&#x06A9;&#x0647; '+(c+1)+'</button></div>';
                   stL=endL+1;
                 }
                 document.getElementById("res").innerHTML=out;
@@ -582,8 +582,8 @@ jobs:
                 var content = "```\n" + CHUNKS[idx] + "\n```";
                 if(window.Android&&window.Android.setClip) window.Android.setClip(content);
                 else{var ta=document.createElement("textarea");ta.value=content;document.body.appendChild(ta);ta.select();document.execCommand("copy");document.body.removeChild(ta);}
-                var btn=document.getElementById("b_"+idx);btn.className="bc done";btn.innerHTML="\u2705 \u062A\u06A9\u0647 " + (idx + 1) + " \u06A9\u067E\u06CC \u0634\u062F!";
-                setTimeout(function(){btn.className="bc";btn.innerHTML="\uD83D\uDCCB \u06A9\u067E\u06CC \u062A\u06A9\u0647 "+(idx+1);},2500);
+                var btn=document.getElementById("b_"+idx);btn.className="bc done";btn.innerHTML="&#x2705; &#x062A;&#x06A9;&#x0647; " + (idx + 1) + " &#x06A9;&#x067E;&#x06CC; &#x0634;&#x062F;!";
+                setTimeout(function(){btn.className="bc";btn.innerHTML="&#x1F4CB; &#x06A9;&#x067E;&#x06CC; &#x062A;&#x06A9;&#x0647; "+(idx+1);},2500);
               }
 
               function showPrompt(title,placeholder,cb){
@@ -612,8 +612,8 @@ jobs:
                 var inp=document.getElementById("modalInput");
                 if(inp.style.display!=="none"){
                   var v=inp.value.trim();
-                  if(!v){alert("\u0644\u0637\u0641\u0627\u064B \u0646\u0627\u0645 \u0631\u0627 \u0648\u0627\u0631\u062F \u06A9\u0646\u06CC\u062F.");return;}
-                  if(v.indexOf("/")!==-1||v.indexOf("\\")!==-1){alert("\u0646\u0627\u0645 \u0646\u0628\u0627\u06CC\u062F \u0634\u0627\u0645\u0644 / \u06CC\u0627 \\ \u0628\u0627\u0634\u062F.");return;}
+                  if(!v){alert("&#x0644;&#x0637;&#x0641;&#x0627;&#x064B; &#x0646;&#x0627;&#x0645; &#x0631;&#x0627; &#x0648;&#x0627;&#x0631;&#x062F; &#x06A9;&#x0646;&#x06CC;&#x062F;.");return;}
+                  if(v.indexOf("/")!==-1||v.indexOf("\\")!==-1){alert("&#x0646;&#x0627;&#x0645; &#x0646;&#x0628;&#x0627;&#x06CC;&#x062F; &#x0634;&#x0627;&#x0645;&#x0644; / &#x06CC;&#x0627; \\ &#x0628;&#x0627;&#x0634;&#x062F;.");return;}
                   document.getElementById("modalBg").className="modal-bg";
                   var cb=modalCb;modalCb=null;
                   if(cb) cb(v);
@@ -641,11 +641,11 @@ jobs:
                 for(var i=0;i<items.length;i++) if(items[i].t==="d") dirs.push(items[i].n);
                 dirs.sort();
                 CUR_ITEMS=dirs;
-                var h='<div class="head"><h1>\uD83D\uDCC1 \u067E\u0631\u0648\u0698\u0647\u200C\u0647\u0627</h1><p>\u0645\u062F\u06CC\u0631\u06CC\u062A \u0641\u0627\u06CC\u0644\u200C\u0647\u0627\u06CC \u06A9\u062F \u0648 \u06AF\u0632\u0627\u0631\u0634 \u062E\u0637\u0627</p></div>';
-                h+='<button class="b b-g" style="width:100%;margin-bottom:10px" onclick="newProj()">\u2795 \u067E\u0631\u0648\u0698\u0647 \u062C\u062F\u06CC\u062F</button>';
-                if(dirs.length===0) h+='<div class="empty">\u0647\u0646\u0648\u0632 \u067E\u0631\u0648\u0698\u0647\u200C\u0627\u06CC \u0633\u0627\u062E\u062A\u0647 \u0646\u0634\u062F\u0647.<br>\u062F\u06A9\u0645\u0647 \u0628\u0627\u0644\u0627 \u0631\u0627 \u0628\u0632\u0646\u06CC\u062F.</div>';
+                var h='<div class="head"><h1>&#x1F4C1; &#x067E;&#x0631;&#x0648;&#x0698;&#x0647;&#x200C;&#x0647;&#x0627;</h1><p>&#x0645;&#x062F;&#x06CC;&#x0631;&#x06CC;&#x062A; &#x0641;&#x0627;&#x06CC;&#x0644;&#x200C;&#x0647;&#x0627;&#x06CC; &#x06A9;&#x062F; &#x0648; &#x06AF;&#x0632;&#x0627;&#x0631;&#x0634; &#x062E;&#x0637;&#x0627;</p></div>';
+                h+='<button class="b b-g" style="width:100%;margin-bottom:10px" onclick="newProj()">&#x2795; &#x067E;&#x0631;&#x0648;&#x0698;&#x0647; &#x062C;&#x062F;&#x06CC;&#x062F;</button>';
+                if(dirs.length===0) h+='<div class="empty">&#x0647;&#x0646;&#x0648;&#x0632; &#x067E;&#x0631;&#x0648;&#x0698;&#x0647;&#x200C;&#x0627;&#x06CC; &#x0633;&#x0627;&#x062E;&#x062A;&#x0647; &#x0646;&#x0634;&#x062F;&#x0647.<br>&#x062F;&#x06A9;&#x0645;&#x0647; &#x0628;&#x0627;&#x0644;&#x0627; &#x0631;&#x0627; &#x0628;&#x0632;&#x0646;&#x06CC;&#x062F;.</div';
                 for(var i=0;i<dirs.length;i++){
-                  h+='<div class="item"><div class="item-main" onclick="actOpen('+i+',\'p\')"><div class="item-n">\uD83D\uDCC2 '+esc(dirs[i])+'</div><div class="item-m">\u067E\u0631\u0648\u0698\u0647</div></div><button class="item-d" onclick="actDel('+i+',\'p\')">\uD83D\uDDD1 \u062D\u0630\u0641</button></div>';
+                  h+='<div class="item"><div class="item-main" onclick="actOpen('+i+',\'p\')"><div class="item-n">&#x1F4C2; '+esc(dirs[i])+'</div><div class="item-m">&#x067E;&#x0631;&#x0648;&#x0698;&#x0647;</div></div><button class="item-d" onclick="actDel('+i+',\'p\')">&#x1F5D1; &#x062D;&#x0630;&#x0641;</button></div>';
                 }
                 document.getElementById("proj-view").innerHTML=h;
               }
@@ -665,11 +665,11 @@ jobs:
                 if(type==="p") path=BP+"/"+name;
                 else path=curPath()+"/"+name;
                 var isDir=(type==="p"||type==="d");
-                var msg=isDir?("\u067E\u0648\u0634\u0647 \""+name+"\" \u0648 \u0647\u0645\u0647 \u0645\u062D\u062A\u0648\u06CC\u0627\u062A\u0634 \u062D\u0630\u0641 \u0634\u0648\u062F\u061F"):("\u0641\u0627\u06CC\u0644 \""+name+"\" \u062D\u0630\u0641 \u0634\u0648\u062F\u061F");
-                showConfirm("\u062A\u0623\u06CC\u06CC\u062F \u062D\u0630\u0641",msg,function(){
+                var msg=isDir?("&#x067E;&#x0648;&#x0634;&#x0647; \""+name+"\" &#x0648; &#x0647;&#x0645;&#x0647; &#x0645;&#x062D;&#x062A;&#x0648;&#x06CC;&#x0627;&#x062A;&#x0634; &#x062D;&#x0630;&#x0641; &#x0634;&#x0648;&#x062F;&#x061F;"):("&#x0641;&#x0627;&#x06CC;&#x0644; \""+name+"\" &#x062D;&#x0630;&#x0641; &#x0634;&#x0648;&#x062F;&#x061F;");
+                showConfirm("&#x062A;&#x0623;&#x06CC;&#x06CC;&#x062F; &#x062D;&#x0630;&#x0641;",msg,function(){
                   if(window.Android&&window.Android.deleteItem){
                     var ok=window.Android.deleteItem(path);
-                    if(window.Android.toast) window.Android.toast(ok?"\u2705 \u062D\u0630\u0641 \u0634\u062F":"\u274C \u062E\u0637\u0627 \u062F\u0631 \u062D\u0630\u0641");
+                    if(window.Android.toast) window.Android.toast(ok?"&#x2705; &#x062D;&#x0630;&#x0641; &#x0634;&#x062F;":"&#x274C; &#x062E;&#x0637;&#x0627; &#x062F;&#x0631; &#x062D;&#x0630;&#x0641;");
                   }
                   if(type==="p") renderProjList();
                   else if(curFolder) renderFileList();
@@ -678,7 +678,7 @@ jobs:
               }
 
               function newProj(){
-                showPrompt("\u067E\u0631\u0648\u0698\u0647 \u062C\u062F\u06CC\u062F","\u0646\u0627\u0645 \u067E\u0631\u0648\u0698\u0647",function(name){
+                showPrompt("&#x067E;&#x0631;&#x0648;&#x0698;&#x0647; &#x062C;&#x062F;&#x06CC;&#x062F;","&#x0646;&#x0627;&#x0645; &#x067E;&#x0631;&#x0648;&#x0698;&#x0647;",function(name){
                   if(window.Android&&window.Android.makeDir) window.Android.makeDir(BP+"/"+name);
                   renderProjList();
                 });
@@ -693,33 +693,33 @@ jobs:
                 dirs.sort();files.sort();
                 CUR_ITEMS=dirs.concat(files);
                 var dLen=dirs.length;
-                var h='<div class="nav"><button class="nav-b" onclick="renderProjList()">\u2190 \u0628\u0631\u06AF\u0634\u062A</button><span class="nav-t">'+esc(curProj)+'</span></div>';
-                h+='<div class="bg" style="margin-bottom:10px"><button class="b b-g" onclick="newFolder()">\u2795 \u067E\u0648\u0634\u0647</button><button class="b b-b" onclick="newFileHere()">\u2795 \u0641\u0627\u06CC\u0644</button></div>';
-                if(dirs.length===0&&files.length===0) h+='<div class="empty">\u0627\u06CC\u0646 \u067E\u0631\u0648\u0698\u0647 \u062E\u0627\u0644\u06CC \u0627\u0633\u062A.</div>';
+                var h='<div class="nav"><button class="nav-b" onclick="renderProjList()">&#x2190; &#x0628;&#x0631;&#x06AF;&#x0634;&#x062A;</button><span class="nav-t">'+esc(curProj)+'</span></div>';
+                h+='<div class="bg" style="margin-bottom:10px"><button class="b b-g" onclick="newFolder()">&#x2795; &#x067E;&#x0648;&#x0634;&#x0647;</button><button class="b b-b" onclick="newFileHere()">&#x2795; &#x0641;&#x0627;&#x06CC;&#x0644;</button></div>';
+                if(dirs.length===0&&files.length===0) h+='<div class="empty">&#x0627;&#x06CC;&#x0646; &#x067E;&#x0631;&#x0648;&#x0698;&#x0647; &#x062E;&#x0627;&#x0644;&#x06CC; &#x0627;&#x0633;&#x062A;.</div>';
                 for(var i=0;i<dirs.length;i++){
-                  h+='<div class="item"><div class="item-main" onclick="actOpen('+i+',\'d\')"><div class="item-n">\uD83D\uDCC1 '+esc(dirs[i])+'</div><div class="item-m">\u067E\u0648\u0634\u0647</div></div><button class="item-d" onclick="actDel('+i+',\'d\')">\uD83D\uDDD1 \u062D\u0630\u0641</button></div>';
+                  h+='<div class="item"><div class="item-main" onclick="actOpen('+i+',\'d\')"><div class="item-n">&#x1F4C1; '+esc(dirs[i])+'</div><div class="item-m">&#x067E;&#x0648;&#x0634;&#x0647;</div></div><button class="item-d" onclick="actDel('+i+',\'d\')">&#x1F5D1; &#x062D;&#x0630;&#x0641;</button></div>';
                 }
                 for(var i=0;i<files.length;i++){
                   var ii=dLen+i;
-                  h+='<div class="item"><div class="item-main" onclick="actOpen('+ii+',\'f\')"><div class="item-n">\uD83D\uDCC4 '+esc(files[i])+'</div><div class="item-m">\u0641\u0627\u06CC\u0644</div></div><button class="item-d" onclick="actDel('+ii+',\'f\')">\uD83D\uDDD1 \u062D\u0630\u0641</button></div>';
+                  h+='<div class="item"><div class="item-main" onclick="actOpen('+ii+',\'f\')"><div class="item-n">&#x1F4C4; '+esc(files[i])+'</div><div class="item-m">&#x0641;&#x0627;&#x06CC;&#x0644;</div></div><button class="item-d" onclick="actDel('+ii+',\'f\')">&#x1F5D1; &#x062D;&#x0630;&#x0641;</button></div>';
                 }
                 document.getElementById("proj-view").innerHTML=h;
               }
 
               function newFolder(){
-                showPrompt("\u067E\u0648\u0634\u0647 \u062C\u062F\u06CC\u062F","\u0645\u062B\u0644\u0627\u064B: \u062E\u0637\u0627\u0647\u0627",function(name){
+                showPrompt("&#x067E;&#x0648;&#x0634;&#x0647; &#x062C;&#x062F;&#x06CC;&#x062F;","&#x0645;&#x062B;&#x0644;&#x0627;&#x064B;: &#x062E;&#x0637;&#x0627;&#x0647;&#x0627;",function(name){
                   if(window.Android&&window.Android.makeDir) window.Android.makeDir(BP+"/"+curProj+"/"+name);
                   renderFolderList();
                 });
               }
 
               function newFileHere(){
-                showPrompt("\u0641\u0627\u06CC\u0644 \u062C\u062F\u06CC\u062F","\u0645\u062B\u0644\u0627\u064B: bug.txt",function(name){
+                showPrompt("&#x0641;&#x0627;&#x06CC;&#x0644; &#x062C;&#x062F;&#x06CC;&#x062F;","&#x0645;&#x062B;&#x0644;&#x0627;&#x064B;: bug.txt",function(name){
                   var path=BP+"/"+curProj+"/"+name;
                   if(window.Android&&window.Android.writeFile){
                     var ok=window.Android.writeFile(path,"");
                     if(ok) openFile(name,BP+"/"+curProj);
-                    else alert("\u062E\u0637\u0627 \u062F\u0631 \u0633\u0627\u062E\u062A \u0641\u0627\u06CC\u0644!");
+                    else alert("&#x062E;&#x0637;&#x0627; &#x062F;&#x0631; &#x0633;&#x0627;&#x062E;&#x062A; &#x0641;&#x0627;&#x06CC;&#x0644;!");
                   }
                 });
               }
@@ -732,22 +732,22 @@ jobs:
                 for(var i=0;i<items.length;i++) if(items[i].t==="f") files.push(items[i].n);
                 files.sort();
                 CUR_ITEMS=files;
-                var h='<div class="nav"><button class="nav-b" onclick="curFolder=\'\';renderFolderList()">\u2190 \u0628\u0631\u06AF\u0634\u062A</button><span class="nav-t">\uD83D\uDCC1 '+esc(curProj)+' / '+esc(curFolder)+'</span></div>';
-                h+='<button class="b b-b" style="width:100%;margin-bottom:10px" onclick="newFileInFolder()">\u2795 \u0641\u0627\u06CC\u0644 \u062C\u062F\u06CC\u062F</button>';
-                if(files.length===0) h+='<div class="empty">\u0627\u06CC\u0646 \u067E\u0648\u0634\u0647 \u062E\u0627\u0644\u06CC \u0627\u0633\u062A.</div>';
+                var h='<div class="nav"><button class="nav-b" onclick="curFolder=\'\';renderFolderList()">&#x2190; &#x0628;&#x0631;&#x06AF;&#x0634;&#x062A;</button><span class="nav-t">&#x1F4C1; '+esc(curProj)+' / '+esc(curFolder)+'</span></div>';
+                h+='<button class="b b-b" style="width:100%;margin-bottom:10px" onclick="newFileInFolder()">&#x2795; &#x0641;&#x0627;&#x06CC;&#x0644; &#x062C;&#x062F;&#x06CC;&#x062F;</button>';
+                if(files.length===0) h+='<div class="empty">&#x0627;&#x06CC;&#x0646; &#x067E;&#x0648;&#x0634;&#x0647; &#x062E;&#x0627;&#x0644;&#x06CC; &#x0627;&#x0633;&#x062A;.</div>';
                 for(var i=0;i<files.length;i++){
-                  h+='<div class="item"><div class="item-main" onclick="actOpen('+i+',\'f\')"><div class="item-n">\uD83D\uDCC4 '+esc(files[i])+'</div><div class="item-m">\u0641\u0627\u06CC\u0644</div></div><button class="item-d" onclick="actDel('+i+',\'f\')">\uD83D\uDDD1 \u062D\u0630\u0641</button></div>';
+                  h+='<div class="item"><div class="item-main" onclick="actOpen('+i+',\'f\')"><div class="item-n">&#x1F4C4; '+esc(files[i])+'</div><div class="item-m">&#x0641;&#x0627;&#x06CC;&#x0644;</div></div><button class="item-d" onclick="actDel('+i+',\'f\')">&#x1F5D1; &#x062D;&#x0630;&#x0641;</button></div>';
                 }
                 document.getElementById("proj-view").innerHTML=h;
               }
 
               function newFileInFolder(){
-                showPrompt("\u0641\u0627\u06CC\u0644 \u062C\u062F\u06CC\u062F","\u0645\u062B\u0644\u0627\u064B: error_log.txt",function(name){
+                showPrompt("&#x0641;&#x0627;&#x06CC;&#x0644; &#x062C;&#x062F;&#x06CC;&#x062F;","&#x0645;&#x062B;&#x0644;&#x0627;&#x064B;: error_log.txt",function(name){
                   var path=BP+"/"+curProj+"/"+curFolder+"/"+name;
                   if(window.Android&&window.Android.writeFile){
                     var ok=window.Android.writeFile(path,"");
                     if(ok) openFile(name,BP+"/"+curProj+"/"+curFolder);
-                    else alert("\u062E\u0637\u0627 \u062F\u0631 \u0633\u0627\u062E\u062A \u0641\u0627\u06CC\u0644!");
+                    else alert("&#x062E;&#x0637;&#x0627; &#x062F;&#x0631; &#x0633;&#x0627;&#x062E;&#x062A; &#x0641;&#x0627;&#x06CC;&#x0644;!");
                   }
                 });
               }
@@ -756,8 +756,8 @@ jobs:
                 curFile=name;
                 var content="";
                 if(window.Android&&window.Android.readFile) content=window.Android.readFile(dirPath+"/"+name);
-                var h='<div class="nav"><button class="nav-b" onclick="backFromFile()">\u2190 \u0628\u0631\u06AF\u0634\u062A</button><span class="nav-t">'+esc(name)+'</span></div>';
-                h+='<div class="ed-head"><button class="b b-g" style="flex:1" onclick="saveFile()">\uD83D\uDCBE \u0630\u062E\u06CC\u0631\u0647</button><button class="b b-b" style="flex:1" onclick="copyFileContent()">\uD83D\uDCCB \u06A9\u067E\u06CC \u06A9\u0644</button></div>';
+                var h='<div class="nav"><button class="nav-b" onclick="backFromFile()">&#x2190; &#x0628;&#x0631;&#x06AF;&#x0634;&#x062A;</button><span class="nav-t">'+esc(name)+'</span></div>';
+                h+='<div class="ed-head"><button class="b b-g" style="flex:1" onclick="saveFile()">&#x1F4BE; &#x0630;&#x062E;&#x06CC;&#x0631;&#x0647;</button><button class="b b-b" style="flex:1" onclick="copyFileContent()">&#x1F4CB; &#x06A9;&#x067E;&#x06CC; &#x06A9;&#x0644;</button></div>';
                 h+='<textarea class="ed-area" id="edArea"></textarea>';
                 document.getElementById("proj-view").innerHTML=h;
                 document.getElementById("edArea").value=content;
@@ -775,8 +775,8 @@ jobs:
                 var content=document.getElementById("edArea").value;
                 if(window.Android&&window.Android.writeFile){
                   var ok=window.Android.writeFile(fullPath,content);
-                  if(ok&&window.Android.toast) window.Android.toast("\u2705 \u0630\u062E\u06CC\u0631\u0647 \u0634\u062F");
-                  else if(!ok) alert("\u062E\u0637\u0627 \u062F\u0631 \u0630\u062E\u06CC\u0631\u0647!");
+                  if(ok&&window.Android.toast) window.Android.toast("&#x2705; &#x0630;&#x062E;&#x06CC;&#x0631;&#x0647; &#x0634;&#x062F;");
+                  else if(!ok) alert("&#x062E;&#x0637;&#x0627; &#x062F;&#x0631; &#x0630;&#x062E;&#x06CC;&#x0631;&#x0647;!");
                 }
               }
 
