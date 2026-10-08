@@ -12,19 +12,31 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
           java-version: '17'
           distribution: 'temurin'
 
-      - name: Scaffold Project Structure
+      - name: Accept Android SDK Licenses
+        run: |
+          yes | sdkmanager --licenses || true
+
+      - name: Scaffold Android App
         run: |
           mkdir -p app/src/main/java/com/saeed/splitter
           mkdir -p app/src/main/assets
-          mkdir -p app/src/main/res/values
 
-          # settings.gradle
+          # 1. gradle.properties
+          cat << 'EOF' > gradle.properties
+          org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8
+          android.useAndroidX=true
+          EOF
+
+          # 2. settings.gradle
           cat << 'EOF' > settings.gradle
           pluginManagement {
               repositories {
@@ -44,14 +56,14 @@ jobs:
           include ':app'
           EOF
 
-          # root build.gradle
+          # 3. root build.gradle
           cat << 'EOF' > build.gradle
           plugins {
               id 'com.android.application' version '8.5.2' apply false
           }
           EOF
 
-          # app/build.gradle
+          # 4. app/build.gradle
           cat << 'EOF' > app/build.gradle
           plugins {
               id 'com.android.application'
@@ -74,9 +86,6 @@ jobs:
                       minifyEnabled false
                       signingConfig signingConfigs.debug
                   }
-                  debug {
-                      minifyEnabled false
-                  }
               }
 
               compileOptions {
@@ -84,32 +93,20 @@ jobs:
                   targetCompatibility JavaVersion.VERSION_17
               }
           }
-
-          dependencies {
-              implementation 'androidx.appcompat:appcompat:1.6.1'
-          }
           EOF
 
-          # strings.xml
-          cat << 'EOF' > app/src/main/res/values/strings.xml
-          <resources>
-              <string name="app_name">&#x0628;&#x0631;&#x0634; &#x06A9;&#x062F;</string>
-          </resources>
-          EOF
-
-          # AndroidManifest.xml
+          # 5. AndroidManifest.xml
           cat << 'EOF' > app/src/main/AndroidManifest.xml
           <?xml version="1.0" encoding="utf-8"?>
           <manifest xmlns:android="http://schemas.android.com/apk/res/android">
               <application
                   android:allowBackup="true"
-                  android:label="@string/app_name"
+                  android:label="Code Splitter"
                   android:supportsRtl="true"
                   android:theme="@android:style/Theme.NoTitleBar">
                   <activity
                       android:name="com.saeed.splitter.MainActivity"
                       android:exported="true"
-                      android:configChanges="orientation|screenSize|keyboardHidden"
                       android:windowSoftInputMode="adjustResize">
                       <intent-filter>
                           <action android:name="android.intent.action.MAIN" />
@@ -120,7 +117,7 @@ jobs:
           </manifest>
           EOF
 
-          # MainActivity.java
+          # 6. MainActivity.java
           cat << 'EOF' > app/src/main/java/com/saeed/splitter/MainActivity.java
           package com.saeed.splitter;
 
@@ -147,7 +144,6 @@ jobs:
                   WebSettings ws = webView.getSettings();
                   ws.setJavaScriptEnabled(true);
                   ws.setDomStorageEnabled(true);
-                  ws.setBuiltInZoomControls(false);
 
                   webView.addJavascriptInterface(new WebBridge(this), "Android");
                   webView.loadUrl("file:///android_asset/index.html");
@@ -204,7 +200,7 @@ jobs:
           }
           EOF
 
-          # index.html
+          # 7. index.html
           cat << 'EOF' > app/src/main/assets/index.html
           <!DOCTYPE html>
           <html lang="fa" dir="rtl">
@@ -324,7 +320,7 @@ jobs:
           <body>
             <div class="head">
               <h1>&#x2702;&#xFE0F; &#x0627;&#x0628;&#x0632;&#x0627;&#x0631; &#x0628;&#x0631;&#x0634; &#x06A9;&#x062F;</h1>
-              <p>&#x0645;&#x062E;&#x0635;&#x0648;&#x0635; &#x0627;&#x067E;&#x200C;&#x0647;&#x0627;&#x06CC; &#x06AF;&#x06CC;&#x062A;&#x200C;&#x0647;&#x0627;&#x0628; &#x0648; &#x0686;&#x062A;&#x200C;&#x0628;&#x0627;&#x062A;</p>
+              <p>&#x0645;&#x062E;&#x0635;&#x0648;&#x0635; &#x06AF;&#x0648;&#x0634;&#x06CC; &#x0648; &#x0686;&#x062A;&#x200C;&#x0628;&#x0627;&#x062A;</p>
             </div>
 
             <div class="box">
@@ -490,17 +486,19 @@ jobs:
           </html>
           EOF
 
-      - name: Generate Gradle Wrapper
-        run: gradle wrapper --gradle-version 8.7
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.7'
 
-      - name: Build APK with Gradle Wrapper
-        run: ./gradlew assembleDebug
+      - name: Build APK
+        run: gradle assembleRelease --stacktrace
 
       - name: Upload Artifact APK
         uses: actions/upload-artifact@v4
         with:
           name: CodeSplitter-APK
-          path: app/build/outputs/apk/debug/app-debug.apk
+          path: app/build/outputs/apk/release/app-release.apk
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
@@ -508,6 +506,6 @@ jobs:
         with:
           tag_name: v${{ github.run_number }}
           name: Release v${{ github.run_number }}
-          files: app/build/outputs/apk/debug/app-debug.apk
+          files: app/build/outputs/apk/release/app-release.apk
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
