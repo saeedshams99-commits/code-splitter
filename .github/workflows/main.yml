@@ -252,7 +252,7 @@ jobs:
                       StringBuilder sb = new StringBuilder("[");
                       for (int i = 0; i < files.length; i++) {
                           if (i > 0) sb.append(",");
-                          sb.append("{\"n\":\"").append(files[i].getName().replace("\"", "\\\""))
+                          sb.append("{\"n\":\"").append(files[i].getName().replace("\\", "\\\\").replace("\"", "\\\""))
                             .append("\",\"t\":\"").append(files[i].isDirectory() ? "d" : "f").append("\"}");
                       }
                       sb.append("]");
@@ -292,6 +292,7 @@ jobs:
                   @JavascriptInterface
                   public boolean deleteItem(String path) {
                       File f = new File(path);
+                      if (!f.exists()) return false;
                       if (f.isDirectory()) {
                           File[] ch = f.listFiles();
                           if (ch != null) {
@@ -307,6 +308,7 @@ jobs:
                   public void openUrl(String url) {
                       try {
                           Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse(url));
+                          intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
                           ctx.startActivity(intent);
                       } catch (Exception e) {}
                   }
@@ -364,19 +366,22 @@ jobs:
               .bc.done{background:#10b981}
               .nav{display:flex;align-items:center;gap:8px;margin-bottom:10px}
               .nav-b{background:#334155;color:#e2e8f0;border:none;border-radius:8px;padding:8px 12px;font-size:0.8rem;cursor:pointer}
-              .nav-t{font-size:0.95rem;font-weight:bold;color:#f59e0b;flex:1}
-              .item{background:#1e293b;border:1px solid #334155;border-radius:8px;padding:12px;margin-bottom:6px;display:flex;justify-content:space-between;align-items:center;cursor:pointer}
-              .item:active{background:#334155}
-              .item-n{font-size:0.9rem;font-weight:bold}
+              .nav-t{font-size:0.95rem;font-weight:bold;color:#f59e0b;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+              .item{background:#1e293b;border:1px solid #334155;border-radius:8px;padding:12px;margin-bottom:6px;display:flex;justify-content:space-between;align-items:center;gap:8px}
+              .item-main{flex:1;cursor:pointer;overflow:hidden}
+              .item-main:active{opacity:0.6}
+              .item-n{font-size:0.9rem;font-weight:bold;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
               .item-m{font-size:0.7rem;color:#94a3b8}
-              .item-d{background:#7f1d1d;color:#fca5a5;border:none;border-radius:6px;padding:6px 10px;font-size:0.7rem;cursor:pointer}
+              .item-d{background:#7f1d1d;color:#fca5a5;border:none;border-radius:6px;padding:8px 12px;font-size:0.75rem;cursor:pointer;flex-shrink:0}
+              .item-d:active{background:#991b1b}
               .empty{text-align:center;color:#64748b;padding:30px 10px;font-size:0.85rem}
               .ed-head{display:flex;gap:6px;margin-bottom:8px}
               .ed-area{width:100%;height:calc(100vh - 220px);background:#020617;border:1px solid #475569;border-radius:8px;color:#e2e8f0;font-family:monospace;font-size:0.75rem;padding:8px;resize:none;direction:ltr;text-align:left}
-              .modal-bg{display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.7);z-index:100;justify-content:center;align-items:center}
+              .modal-bg{display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.7);z-index:100;justify-content:center;align-items:center;padding:16px}
               .modal-bg.show{display:flex}
-              .modal{background:#1e293b;border:1px solid #475569;border-radius:12px;padding:16px;width:85%;max-width:320px}
+              .modal{background:#1e293b;border:1px solid #475569;border-radius:12px;padding:16px;width:100%;max-width:340px}
               .modal h3{color:#38bdf8;margin-bottom:10px;font-size:0.95rem}
+              .modal p{color:#cbd5e1;margin-bottom:12px;font-size:0.85rem;line-height:1.5}
               .modal input{width:100%;background:#020617;border:1px solid #475569;border-radius:6px;color:#e2e8f0;padding:10px;font-size:0.9rem;margin-bottom:10px}
               .modal-btns{display:flex;gap:8px}
               .modal-btns .b{flex:1}
@@ -418,6 +423,7 @@ jobs:
             <div class="modal-bg" id="modalBg">
               <div class="modal">
                 <h3 id="modalTitle"></h3>
+                <p id="modalMsg" style="display:none"></p>
                 <input id="modalInput" placeholder="" />
                 <div class="modal-btns">
                   <button class="b b-g" onclick="modalOk()">&#x2705; &#x062A;&#x0623;&#x06CC;&#x06CC;&#x062F;</button>
@@ -440,6 +446,7 @@ jobs:
               var BP="";
               var curProj="",curFolder="",curFile="";
               var modalCb=null;
+              var CUR_ITEMS=[];
               var latestUrl = "https://github.com/" + REPO + "/releases";
 
               window.onload=function(){
@@ -480,11 +487,11 @@ jobs:
 
               window.onBack=function(){
                 var pp=document.getElementById("pg-proj");
-                if(pp.className.indexOf("active")===-1) return false;
-                if(curFile){curFile="";renderFileList();return true;}
+                if(pp.className.indexOf("active")===-1){goTab("split");return true;}
+                if(curFile){curFile="";if(curFolder) renderFileList();else renderFolderList();return true;}
                 if(curFolder){curFolder="";renderFolderList();return true;}
                 if(curProj){curProj="";renderProjList();return true;}
-                goTab("split");return true;
+                return false;
               };
 
               function goTab(t){
@@ -492,7 +499,18 @@ jobs:
                 document.getElementById("pg-proj").className=t==="proj"?"page active":"page";
                 document.getElementById("tb-split").className=t==="split"?"tab active":"tab";
                 document.getElementById("tb-proj").className=t==="proj"?"tab active":"tab";
-                if(t==="proj"&&!curProj) renderProjList();
+                if(t==="proj"){
+                  if(curFile) openFile(curFile, curPath());
+                  else if(curFolder) renderFileList();
+                  else if(curProj) renderFolderList();
+                  else renderProjList();
+                }
+              }
+
+              function curPath(){
+                var p=BP+"/"+curProj;
+                if(curFolder) p+="/"+curFolder;
+                return p;
               }
 
               function pasteClip(){
@@ -550,8 +568,10 @@ jobs:
                 setTimeout(function(){btn.className="bc";btn.innerHTML="\uD83D\uDCCB \u06A9\u067E\u06CC \u062A\u06A9\u0647 "+(idx+1);},2500);
               }
 
-              function showModal(title,placeholder,cb){
+              function showPrompt(title,placeholder,cb){
                 document.getElementById("modalTitle").innerText=title;
+                document.getElementById("modalMsg").style.display="none";
+                document.getElementById("modalInput").style.display="block";
                 document.getElementById("modalInput").placeholder=placeholder;
                 document.getElementById("modalInput").value="";
                 document.getElementById("modalBg").className="modal-bg show";
@@ -559,15 +579,31 @@ jobs:
                 setTimeout(function(){document.getElementById("modalInput").focus();},300);
               }
 
+              function showConfirm(title,msg,cb){
+                document.getElementById("modalTitle").innerText=title;
+                document.getElementById("modalMsg").style.display="block";
+                document.getElementById("modalMsg").innerText=msg;
+                document.getElementById("modalInput").style.display="none";
+                document.getElementById("modalBg").className="modal-bg show";
+                modalCb=function(){cb(true);};
+              }
+
               function modalClose(){document.getElementById("modalBg").className="modal-bg";modalCb=null;}
 
               function modalOk(){
-                var v=document.getElementById("modalInput").value.trim();
-                if(!v){alert("\u0644\u0637\u0641\u0627\u064B \u0646\u0627\u0645 \u0631\u0627 \u0648\u0627\u0631\u062F \u06A9\u0646\u06CC\u062F.");return;}
-                if(v.indexOf("/")!==-1||v.indexOf("\\")!==-1){alert("\u0646\u0627\u0645 \u0646\u0628\u0627\u06CC\u062F \u0634\u0627\u0645\u0644 / \u06CC\u0627 \\ \u0628\u0627\u0634\u062F.");return;}
-                document.getElementById("modalBg").className="modal-bg";
-                if(modalCb) modalCb(v);
-                modalCb=null;
+                var inp=document.getElementById("modalInput");
+                if(inp.style.display!=="none"){
+                  var v=inp.value.trim();
+                  if(!v){alert("\u0644\u0637\u0641\u0627\u064B \u0646\u0627\u0645 \u0631\u0627 \u0648\u0627\u0631\u062F \u06A9\u0646\u06CC\u062F.");return;}
+                  if(v.indexOf("/")!==-1||v.indexOf("\\")!==-1){alert("\u0646\u0627\u0645 \u0646\u0628\u0627\u06CC\u062F \u0634\u0627\u0645\u0644 / \u06CC\u0627 \\ \u0628\u0627\u0634\u062F.");return;}
+                  document.getElementById("modalBg").className="modal-bg";
+                  var cb=modalCb;modalCb=null;
+                  if(cb) cb(v);
+                } else {
+                  document.getElementById("modalBg").className="modal-bg";
+                  var cb=modalCb;modalCb=null;
+                  if(cb) cb();
+                }
               }
 
               function ls(path){
@@ -576,34 +612,58 @@ jobs:
                 try{return JSON.parse(r);}catch(e){return[];}
               }
 
+              function esc(s){
+                return (s+"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+              }
+
               function renderProjList(){
                 curProj="";curFolder="";curFile="";
                 var items=ls(BP);
                 var dirs=[];
                 for(var i=0;i<items.length;i++) if(items[i].t==="d") dirs.push(items[i].n);
                 dirs.sort();
+                CUR_ITEMS=dirs;
                 var h='<div class="head"><h1>\uD83D\uDCC1 \u067E\u0631\u0648\u0698\u0647\u200C\u0647\u0627</h1><p>\u0645\u062F\u06CC\u0631\u06CC\u062A \u0641\u0627\u06CC\u0644\u200C\u0647\u0627\u06CC \u06A9\u062F \u0648 \u06AF\u0632\u0627\u0631\u0634 \u062E\u0637\u0627</p></div>';
                 h+='<button class="b b-g" style="width:100%;margin-bottom:10px" onclick="newProj()">\u2795 \u067E\u0631\u0648\u0698\u0647 \u062C\u062F\u06CC\u062F</button>';
                 if(dirs.length===0) h+='<div class="empty">\u0647\u0646\u0648\u0632 \u067E\u0631\u0648\u0698\u0647\u200C\u0627\u06CC \u0633\u0627\u062E\u062A\u0647 \u0646\u0634\u062F\u0647.<br>\u062F\u06A9\u0645\u0647 \u0628\u0627\u0644\u0627 \u0631\u0627 \u0628\u0632\u0646\u06CC\u062F.</div>';
                 for(var i=0;i<dirs.length;i++){
-                  h+='<div class="item" onclick="openProj(\''+dirs[i].replace(/'/g,"\\'")+'\')"><div><div class="item-n">\uD83D\uDCC2 '+dirs[i]+'</div><div class="item-m">\u067E\u0631\u0648\u0698\u0647</div></div><button class="item-d" onclick="event.stopPropagation();delProj(\''+dirs[i].replace(/'/g,"\\'")+'\')">\u062D\u0630\u0641</button></div>';
+                  h+='<div class="item"><div class="item-main" onclick="actOpen('+i+',\'p\')"><div class="item-n">\uD83D\uDCC2 '+esc(dirs[i])+'</div><div class="item-m">\u067E\u0631\u0648\u0698\u0647</div></div><button class="item-d" onclick="actDel('+i+',\'p\')">\uD83D\uDDD1 \u062D\u0630\u0641</button></div>';
                 }
                 document.getElementById("proj-view").innerHTML=h;
               }
 
-              function newProj(){
-                showModal("\u067E\u0631\u0648\u0698\u0647 \u062C\u062F\u06CC\u062F","\u0646\u0627\u0645 \u067E\u0631\u0648\u0698\u0647",function(name){
-                  if(window.Android&&window.Android.makeDir) window.Android.makeDir(BP+"/"+name);
-                  renderProjList();
+              function actOpen(idx,type){
+                var name=CUR_ITEMS[idx];
+                if(!name) return;
+                if(type==="p"){curProj=name;curFolder="";renderFolderList();}
+                else if(type==="d"){curFolder=name;renderFileList();}
+                else if(type==="f"){openFile(name,curPath());}
+              }
+
+              function actDel(idx,type){
+                var name=CUR_ITEMS[idx];
+                if(!name) return;
+                var path;
+                if(type==="p") path=BP+"/"+name;
+                else path=curPath()+"/"+name;
+                var isDir=(type==="p"||type==="d");
+                var msg=isDir?("\u067E\u0648\u0634\u0647 \""+name+"\" \u0648 \u0647\u0645\u0647 \u0645\u062D\u062A\u0648\u06CC\u0627\u062A\u0634 \u062D\u0630\u0641 \u0634\u0648\u062F\u061F"):("\u0641\u0627\u06CC\u0644 \""+name+"\" \u062D\u0630\u0641 \u0634\u0648\u062F\u061F");
+                showConfirm("\u062A\u0623\u06CC\u06CC\u062F \u062D\u0630\u0641",msg,function(){
+                  if(window.Android&&window.Android.deleteItem){
+                    var ok=window.Android.deleteItem(path);
+                    if(window.Android.toast) window.Android.toast(ok?"\u2705 \u062D\u0630\u0641 \u0634\u062F":"\u274C \u062E\u0637\u0627 \u062F\u0631 \u062D\u0630\u0641");
+                  }
+                  if(type==="p") renderProjList();
+                  else if(curFolder) renderFileList();
+                  else renderFolderList();
                 });
               }
 
-              function openProj(name){curProj=name;curFolder="";renderFolderList();}
-
-              function delProj(name){
-                if(!confirm("\u067E\u0631\u0648\u0698\u0647 \""+name+"\" \u0648 \u0647\u0645\u0647 \u0641\u0627\u06CC\u0644\u200C\u0647\u0627\u06CC\u0634 \u062D\u0630\u0641 \u0634\u0648\u062F\u061F")) return;
-                if(window.Android&&window.Android.deleteItem) window.Android.deleteItem(BP+"/"+name);
-                renderProjList();
+              function newProj(){
+                showPrompt("\u067E\u0631\u0648\u0698\u0647 \u062C\u062F\u06CC\u062F","\u0646\u0627\u0645 \u067E\u0631\u0648\u0698\u0647",function(name){
+                  if(window.Android&&window.Android.makeDir) window.Android.makeDir(BP+"/"+name);
+                  renderProjList();
+                });
               }
 
               function renderFolderList(){
@@ -613,35 +673,38 @@ jobs:
                 var dirs=[];var files=[];
                 for(var i=0;i<items.length;i++){if(items[i].t==="d") dirs.push(items[i].n);else files.push(items[i].n);}
                 dirs.sort();files.sort();
-                var h='<div class="nav"><button class="nav-b" onclick="renderProjList()">\u2190 \u0628\u0631\u06AF\u0634\u062A</button><span class="nav-t">\uD83D\uDCC2 '+curProj+'</span></div>';
-                h+='<button class="b b-g" style="width:100%;margin-bottom:6px" onclick="newFolder()">\u2795 \u067E\u0648\u0634\u0647 \u062C\u062F\u06CC\u062F</button>';
-                h+='<button class="b b-b" style="width:100%;margin-bottom:10px" onclick="newFileHere()">\u2795 \u0641\u0627\u06CC\u0644 \u062C\u062F\u06CC\u062F \u062F\u0631 \u0631\u06CC\u0634\u0647</button>';
+                CUR_ITEMS=dirs.concat(files);
+                var dLen=dirs.length;
+                var h='<div class="nav"><button class="nav-b" onclick="renderProjList()">\u2190 \u0628\u0631\u06AF\u0634\u062A</button><span class="nav-t">\uD83D\uDCC2 '+esc(curProj)+'</span></div>';
+                h+='<div class="bg" style="margin-bottom:10px"><button class="b b-g" onclick="newFolder()">\u2795 \u067E\u0648\u0634\u0647</button><button class="b b-b" onclick="newFileHere()">\u2795 \u0641\u0627\u06CC\u0644</button></div>';
                 if(dirs.length===0&&files.length===0) h+='<div class="empty">\u0627\u06CC\u0646 \u067E\u0631\u0648\u0698\u0647 \u062E\u0627\u0644\u06CC \u0627\u0633\u062A.</div>';
                 for(var i=0;i<dirs.length;i++){
-                  h+='<div class="item" onclick="openFolder(\''+dirs[i].replace(/'/g,"\\'")+'\')"><div><div class="item-n">\uD83D\uDCC1 '+dirs[i]+'</div><div class="item-m">\u067E\u0648\u0634\u0647</div></div><button class="item-d" onclick="event.stopPropagation();delItem(\''+path+'/'+dirs[i].replace(/'/g,"\\'")+'\',true)">\u062D\u0630\u0641</button></div>';
+                  h+='<div class="item"><div class="item-main" onclick="actOpen('+i+',\'d\')"><div class="item-n">\uD83D\uDCC1 '+esc(dirs[i])+'</div><div class="item-m">\u067E\u0648\u0634\u0647</div></div><button class="item-d" onclick="actDel('+i+',\'d\')">\uD83D\uDDD1 \u062D\u0630\u0641</button></div>';
                 }
                 for(var i=0;i<files.length;i++){
-                  h+='<div class="item" onclick="openFile(\''+files[i].replace(/'/g,"\\'")+'\',\''+path.replace(/'/g,"\\'")+'\')"><div><div class="item-n">\uD83D\uDCC4 '+files[i]+'</div><div class="item-m">\u0641\u0627\u06CC\u0644</div></div><button class="item-d" onclick="event.stopPropagation();delItem(\''+path+'/'+files[i].replace(/'/g,"\\'")+'\',false)">\u062D\u0630\u0641</button></div>';
+                  var ii=dLen+i;
+                  h+='<div class="item"><div class="item-main" onclick="actOpen('+ii+',\'f\')"><div class="item-n">\uD83D\uDCC4 '+esc(files[i])+'</div><div class="item-m">\u0641\u0627\u06CC\u0644</div></div><button class="item-d" onclick="actDel('+ii+',\'f\')">\uD83D\uDDD1 \u062D\u0630\u0641</button></div>';
                 }
                 document.getElementById("proj-view").innerHTML=h;
               }
 
               function newFolder(){
-                showModal("\u067E\u0648\u0634\u0647 \u062C\u062F\u06CC\u062F","\u0646\u0627\u0645 \u067E\u0648\u0634\u0647 (\u0645\u062B\u0644\u0627\u064B: \u062E\u0637\u0627\u0647\u0627)",function(name){
+                showPrompt("\u067E\u0648\u0634\u0647 \u062C\u062F\u06CC\u062F","\u0645\u062B\u0644\u0627\u064B: \u062E\u0637\u0627\u0647\u0627",function(name){
                   if(window.Android&&window.Android.makeDir) window.Android.makeDir(BP+"/"+curProj+"/"+name);
                   renderFolderList();
                 });
               }
 
               function newFileHere(){
-                showModal("\u0641\u0627\u06CC\u0644 \u062C\u062F\u06CC\u062F","\u0646\u0627\u0645 \u0641\u0627\u06CC\u0644 (\u0645\u062B\u0644\u0627\u064B: bug.txt)",function(name){
+                showPrompt("\u0641\u0627\u06CC\u0644 \u062C\u062F\u06CC\u062F","\u0645\u062B\u0644\u0627\u064B: bug.txt",function(name){
                   var path=BP+"/"+curProj+"/"+name;
-                  if(window.Android&&window.Android.writeFile) window.Android.writeFile(path,"");
-                  openFile(name,BP+"/"+curProj);
+                  if(window.Android&&window.Android.writeFile){
+                    var ok=window.Android.writeFile(path,"");
+                    if(ok) openFile(name,BP+"/"+curProj);
+                    else alert("\u062E\u0637\u0627 \u062F\u0631 \u0633\u0627\u062E\u062A \u0641\u0627\u06CC\u0644!");
+                  }
                 });
               }
-
-              function openFolder(name){curFolder=name;renderFileList();}
 
               function renderFileList(){
                 curFile="";
@@ -650,41 +713,47 @@ jobs:
                 var files=[];
                 for(var i=0;i<items.length;i++) if(items[i].t==="f") files.push(items[i].n);
                 files.sort();
-                var h='<div class="nav"><button class="nav-b" onclick="renderFolderList()">\u2190 \u0628\u0631\u06AF\u0634\u062A</button><span class="nav-t">\uD83D\uDCC1 '+curProj+' / '+curFolder+'</span></div>';
+                CUR_ITEMS=files;
+                var h='<div class="nav"><button class="nav-b" onclick="curFolder=\'\';renderFolderList()">\u2190 \u0628\u0631\u06AF\u0634\u062A</button><span class="nav-t">\uD83D\uDCC1 '+esc(curProj)+' / '+esc(curFolder)+'</span></div>';
                 h+='<button class="b b-b" style="width:100%;margin-bottom:10px" onclick="newFileInFolder()">\u2795 \u0641\u0627\u06CC\u0644 \u062C\u062F\u06CC\u062F</button>';
                 if(files.length===0) h+='<div class="empty">\u0627\u06CC\u0646 \u067E\u0648\u0634\u0647 \u062E\u0627\u0644\u06CC \u0627\u0633\u062A.</div>';
                 for(var i=0;i<files.length;i++){
-                  h+='<div class="item" onclick="openFile(\''+files[i].replace(/'/g,"\\'")+'\',\''+path.replace(/'/g,"\\'")+'\')"><div><div class="item-n">\uD83D\uDCC4 '+files[i]+'</div><div class="item-m">\u0641\u0627\u06CC\u0644</div></div><button class="item-d" onclick="event.stopPropagation();delItem(\''+path+'/'+files[i].replace(/'/g,"\\'")+'\',false)">\u062D\u0630\u0641</button></div>';
+                  h+='<div class="item"><div class="item-main" onclick="actOpen('+i+',\'f\')"><div class="item-n">\uD83D\uDCC4 '+esc(files[i])+'</div><div class="item-m">\u0641\u0627\u06CC\u0644</div></div><button class="item-d" onclick="actDel('+i+',\'f\')">\uD83D\uDDD1 \u062D\u0630\u0641</button></div>';
                 }
                 document.getElementById("proj-view").innerHTML=h;
               }
 
               function newFileInFolder(){
-                showModal("\u0641\u0627\u06CC\u0644 \u062C\u062F\u06CC\u062F","\u0646\u0627\u0645 \u0641\u0627\u06CC\u0644 (\u0645\u062B\u0644\u0627\u064B: error_log.txt)",function(name){
+                showPrompt("\u0641\u0627\u06CC\u0644 \u062C\u062F\u06CC\u062F","\u0645\u062B\u0644\u0627\u064B: error_log.txt",function(name){
                   var path=BP+"/"+curProj+"/"+curFolder+"/"+name;
-                  if(window.Android&&window.Android.writeFile) window.Android.writeFile(path,"");
-                  openFile(name,BP+"/"+curProj+"/"+curFolder);
+                  if(window.Android&&window.Android.writeFile){
+                    var ok=window.Android.writeFile(path,"");
+                    if(ok) openFile(name,BP+"/"+curProj+"/"+curFolder);
+                    else alert("\u062E\u0637\u0627 \u062F\u0631 \u0633\u0627\u062E\u062A \u0641\u0627\u06CC\u0644!");
+                  }
                 });
               }
 
               function openFile(name,dirPath){
                 curFile=name;
-                var fullPath=dirPath+"/"+name;
                 var content="";
-                if(window.Android&&window.Android.readFile) content=window.Android.readFile(fullPath);
-                var h='<div class="nav"><button class="nav-b" onclick="backFromFile(\''+dirPath.replace(/'/g,"\\'")+'\')">\u2190 \u0628\u0631\u06AF\u0634\u062A</button><span class="nav-t">\uD83D\uDCC4 '+name+'</span></div>';
-                h+='<div class="ed-head"><button class="b b-g" style="flex:1" onclick="saveFile(\''+fullPath.replace(/'/g,"\\'")+'\')">\uD83D\uDCBE \u0630\u062E\u06CC\u0631\u0647</button><button class="b b-b" style="flex:1" onclick="copyFileContent()">\uD83D\uDCCB \u06A9\u067E\u06CC \u06A9\u0644</button></div>';
-                h+='<textarea class="ed-area" id="edArea">'+content.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;")+'</textarea>';
+                if(window.Android&&window.Android.readFile) content=window.Android.readFile(dirPath+"/"+name);
+                var h='<div class="nav"><button class="nav-b" onclick="backFromFile()">\u2190 \u0628\u0631\u06AF\u0634\u062A</button><span class="nav-t">\uD83D\uDCC4 '+esc(name)+'</span></div>';
+                h+='<div class="ed-head"><button class="b b-g" style="flex:1" onclick="saveFile()">\uD83D\uDCBE \u0630\u062E\u06CC\u0631\u0647</button><button class="b b-b" style="flex:1" onclick="copyFileContent()">\uD83D\uDCCB \u06A9\u067E\u06CC \u06A9\u0644</button></div>';
+                h+='<textarea class="ed-area" id="edArea"></textarea>';
                 document.getElementById("proj-view").innerHTML=h;
+                document.getElementById("edArea").value=content;
               }
 
-              function backFromFile(dirPath){
+              function backFromFile(){
                 curFile="";
                 if(curFolder) renderFileList();
                 else renderFolderList();
               }
 
-              function saveFile(fullPath){
+              function saveFile(){
+                if(!curFile) return;
+                var fullPath=curPath()+"/"+curFile;
                 var content=document.getElementById("edArea").value;
                 if(window.Android&&window.Android.writeFile){
                   var ok=window.Android.writeFile(fullPath,content);
@@ -697,14 +766,6 @@ jobs:
                 var content=document.getElementById("edArea").value;
                 if(window.Android&&window.Android.setClip) window.Android.setClip(content);
                 else{var ta=document.createElement("textarea");ta.value=content;document.body.appendChild(ta);ta.select();document.execCommand("copy");document.body.removeChild(ta);}
-              }
-
-              function delItem(path,isDir){
-                var msg=isDir?"\u067E\u0648\u0634\u0647 \u0648 \u0647\u0645\u0647 \u0645\u062D\u062A\u0648\u06CC\u0627\u062A\u0634 \u062D\u0630\u0641 \u0634\u0648\u062F\u061F":"\u0641\u0627\u06CC\u0644 \u062D\u0630\u0641 \u0634\u0648\u062F\u061F";
-                if(!confirm(msg)) return;
-                if(window.Android&&window.Android.deleteItem) window.Android.deleteItem(path);
-                if(curFolder) renderFileList();
-                else renderFolderList();
               }
             </script>
           </body>
