@@ -442,8 +442,8 @@ jobs:
               var REPO = "__REPO__";
               var CHUNKS=[];
               var MARKERS=["/* ---------- leagues","/* ---------- results","/* ---------- stat model","/* ---------- settings","/* ---------- manual odds","/* ---------- api-football"];
-              var MAX_L=150;
-              var MAX_CHARS=6500;
+              var MAX_L=80;
+              var MAX_CHARS=2800;
               var BP="";
               var curProj="",curFolder="",curFile="";
               var modalCb=null;
@@ -553,7 +553,7 @@ jobs:
                   var wouldExceedChars = (curLen + line.length + 1) > MAX_CHARS;
                   var wouldExceedLines = cur.length >= MAX_L;
 
-                  if((isM && cur.length > 30) || wouldExceedLines || wouldExceedChars){
+                  if((isM && cur.length > 20) || wouldExceedLines || wouldExceedChars){
                     if(cur.length > 0){
                       CHUNKS.push(cur.join("\n"));
                       cur=[];
@@ -579,7 +579,7 @@ jobs:
               }
 
               function copyC(idx){
-                var content=CHUNKS[idx];
+                var content = "```\n" + CHUNKS[idx] + "\n```";
                 if(window.Android&&window.Android.setClip) window.Android.setClip(content);
                 else{var ta=document.createElement("textarea");ta.value=content;document.body.appendChild(ta);ta.select();document.execCommand("copy");document.body.removeChild(ta);}
                 var btn=document.getElementById("b_"+idx);btn.className="bc done";btn.innerHTML="\u2705 \u062A\u06A9\u0647 " + (idx + 1) + " \u06A9\u067E\u06CC \u0634\u062F!";
