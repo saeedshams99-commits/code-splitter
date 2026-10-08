@@ -397,7 +397,7 @@ jobs:
             <div id="pg-split" class="page active">
               <div class="head">
                 <h1>&#x2702;&#xFE0F; &#x0627;&#x0628;&#x0632;&#x0627;&#x0631; &#x0628;&#x0631;&#x0634; &#x06A9;&#x062F;</h1>
-                <p>&#x0645;&#x062E;&#x0635;&#x0648;&#x0635; &#x06AF;&#x0648;&#x0634;&#x06CC; &#x0648; &#x0686;&#x062A;&#x200C;&#x0628;&#x0627;&#x062A; • v__BUILD_NUM__</p>
+                <p>&#x0645;&#x062E;&#x0635;&#x0648;&#x0635; &#x06AF;&#x0648;&#x0634;&#x06CC; &#x0648; &#x0686;&#x062A;&#x200C;&#x0628;&#x0627;&#x062A; &#x2022; v__BUILD_NUM__</p>
               </div>
               <div class="box">
                 <textarea id="src" placeholder="&#x06A9;&#x062F; &#x0631;&#x0627; &#x0627;&#x06CC;&#x0646;&#x062C;&#x0627; &#x067E;&#x06CC;&#x0633;&#x062A; &#x06A9;&#x0646;&#x06CC;&#x062F;..."></textarea>
@@ -442,7 +442,8 @@ jobs:
               var REPO = "__REPO__";
               var CHUNKS=[];
               var MARKERS=["/* ---------- leagues","/* ---------- results","/* ---------- stat model","/* ---------- settings","/* ---------- manual odds","/* ---------- api-football"];
-              var MAX_L=450;
+              var MAX_L=150;
+              var MAX_CHARS=6500;
               var BP="";
               var curProj="",curFolder="",curFile="";
               var modalCb=null;
@@ -539,14 +540,31 @@ jobs:
                 var am=document.getElementById("asciiMsg");am.style.display="block";
                 if(bad.length>0){am.className="al al-e";am.innerHTML="\u26A0\uFE0F \u0647\u0634\u062F\u0627\u0631 ASCII: \u062E\u0637 "+bad.slice(0,5).join(",")+(bad.length>5?"...":"");}
                 else{am.className="al al-o";am.innerHTML="\u2705 \u06A9\u062F 100% ASCII \u0627\u0633\u062A.";}
-                CHUNKS=[];var cur=[];
+                
+                CHUNKS=[];
+                var cur=[];
+                var curLen=0;
+
                 for(var i=0;i<lines.length;i++){
+                  var line=lines[i];
                   var isM=false;
-                  for(var m=0;m<MARKERS.length;m++) if(lines[i].indexOf(MARKERS[m])!==-1){isM=true;break;}
-                  if((isM&&cur.length>100)||cur.length>=MAX_L){CHUNKS.push(cur.join("\n"));cur=[];}
-                  cur.push(lines[i]);
+                  for(var m=0;m<MARKERS.length;m++) if(line.indexOf(MARKERS[m])!==-1){isM=true;break;}
+
+                  var wouldExceedChars = (curLen + line.length + 1) > MAX_CHARS;
+                  var wouldExceedLines = cur.length >= MAX_L;
+
+                  if((isM && cur.length > 30) || wouldExceedLines || wouldExceedChars){
+                    if(cur.length > 0){
+                      CHUNKS.push(cur.join("\n"));
+                      cur=[];
+                      curLen=0;
+                    }
+                  }
+                  cur.push(line);
+                  curLen += line.length + 1;
                 }
                 if(cur.length>0) CHUNKS.push(cur.join("\n"));
+
                 document.getElementById("stBox").style.display="flex";
                 document.getElementById("stL").innerText=lines.length;
                 document.getElementById("stC").innerText=CHUNKS.length;
