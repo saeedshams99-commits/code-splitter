@@ -35,16 +35,12 @@ jobs:
               -storepass saeed123 \
               -keypass saeed123 \
               -dname "CN=Saeed, OU=Splitter, O=Personal, L=Tehran, ST=Tehran, C=IR"
-
             git config user.name "github-actions[bot]"
             git config user.email "github-actions[bot]@users.noreply.github.com"
             git add splitter.keystore
             git commit -m "chore: persist splitter.keystore [skip ci]" || true
             git push || true
           fi
-
-      - name: Accept Android SDK Licenses
-        run: yes | sdkmanager --licenses || true
 
       - name: Create Project Folders
         run: |
@@ -87,11 +83,9 @@ jobs:
           plugins {
               id 'com.android.application'
           }
-
           android {
               namespace 'com.saeed.splitter'
               compileSdk 34
-
               defaultConfig {
                   applicationId "com.saeed.splitter"
                   minSdk 21
@@ -99,7 +93,6 @@ jobs:
                   versionCode __BUILD_NUM__
                   versionName "2.__BUILD_NUM__"
               }
-
               signingConfigs {
                   release {
                       storeFile rootProject.file("splitter.keystore")
@@ -108,7 +101,6 @@ jobs:
                       keyPassword "saeed123"
                   }
               }
-
               buildTypes {
                   release {
                       minifyEnabled false
@@ -119,7 +111,6 @@ jobs:
                       signingConfig signingConfigs.release
                   }
               }
-
               compileOptions {
                   sourceCompatibility JavaVersion.VERSION_17
                   targetCompatibility JavaVersion.VERSION_17
@@ -127,7 +118,7 @@ jobs:
           }
           EOF
 
-      - name: Scaffold AndroidManifest and Java
+      - name: Scaffold AndroidManifest
         run: |
           cat << 'EOF' > app/src/main/AndroidManifest.xml
           <?xml version="1.0" encoding="utf-8"?>
@@ -152,6 +143,8 @@ jobs:
           </manifest>
           EOF
 
+      - name: Scaffold Java
+        run: |
           cat << 'EOF' > app/src/main/java/com/saeed/splitter/MainActivity.java
           package com.saeed.splitter;
 
@@ -164,6 +157,8 @@ jobs:
           import android.net.Uri;
           import android.os.Bundle;
           import android.webkit.JavascriptInterface;
+          import android.webkit.ValueCallback;
+          import android.webkit.WebChromeClient;
           import android.webkit.WebSettings;
           import android.webkit.WebView;
           import android.widget.Toast;
@@ -182,13 +177,25 @@ jobs:
                   WebSettings ws = webView.getSettings();
                   ws.setJavaScriptEnabled(true);
                   ws.setDomStorageEnabled(true);
+                  ws.setAllowFileAccess(false);
+                  ws.setAllowContentAccess(false);
+                  webView.setWebChromeClient(new WebChromeClient());
                   webView.addJavascriptInterface(new WebBridge(this), "Android");
                   webView.loadUrl("file:///android_asset/index.html");
               }
 
               @Override
               public void onBackPressed() {
-                  webView.evaluateJavascript("window.onBack && window.onBack()", null);
+                  webView.evaluateJavascript(
+                      "(window.onBack ? window.onBack() : false)",
+                      new ValueCallback<String>() {
+                          @Override
+                          public void onReceiveValue(String value) {
+                              if (!"true".equals(value)) {
+                                  finish();
+                              }
+                          }
+                      });
               }
 
               public class WebBridge {
@@ -198,6 +205,23 @@ jobs:
                   public WebBridge(Context c) {
                       this.ctx = c;
                       this.sp = c.getSharedPreferences("splitter_prefs", Context.MODE_PRIVATE);
+                  }
+
+                  private String rootDir() {
+                      return ctx.getFilesDir().getAbsolutePath() + "/projects";
+                  }
+
+                  private boolean safe(String path) {
+                      try {
+                          if (path == null) return false;
+                          File base = new File(rootDir()).getCanonicalFile();
+                          File tgt = new File(path).getCanonicalFile();
+                          String b = base.getPath();
+                          String t = tgt.getPath();
+                          return t.equals(b) || t.startsWith(b + File.separator);
+                      } catch (Exception e) {
+                          return false;
+                      }
                   }
 
                   @JavascriptInterface
@@ -240,11 +264,14 @@ jobs:
 
                   @JavascriptInterface
                   public String basePath() {
-                      return ctx.getFilesDir().getAbsolutePath() + "/projects";
+                      File f = new File(rootDir());
+                      if (!f.exists()) f.mkdirs();
+                      return rootDir();
                   }
 
                   @JavascriptInterface
                   public String listDir(String path) {
+                      if (!safe(path)) return "[]";
                       File dir = new File(path);
                       if (!dir.exists() || !dir.isDirectory()) return "[]";
                       File[] files = dir.listFiles();
@@ -252,8 +279,9 @@ jobs:
                       StringBuilder sb = new StringBuilder("[");
                       for (int i = 0; i < files.length; i++) {
                           if (i > 0) sb.append(",");
-                          sb.append("{\"n\":\"").append(files[i].getName().replace("\\", "\\\\").replace("\"", "\\\""))
-                            .append("\",\"t\":\"").append(files[i].isDirectory() ? "d" : "f").append("\"}");
+                          String nm = files[i].getName().replace("\\", "\\\\").replace("\"", "\\\"");
+                          sb.append("{\"n\":\"").append(nm);
+                          sb.append("\",\"t\":\"").append(files[i].isDirectory() ? "d" : "f").append("\"}");
                       }
                       sb.append("]");
                       return sb.toString();
@@ -261,19 +289,27 @@ jobs:
 
                   @JavascriptInterface
                   public String readFile(String path) {
+                      if (!safe(path)) return "";
                       try {
                           File f = new File(path);
-                          if (!f.exists()) return "";
+                          if (!f.exists() || !f.isFile()) return "";
+                          if (f.length() > 4000000L) return "";
                           FileInputStream fis = new FileInputStream(f);
                           byte[] data = new byte[(int) f.length()];
-                          fis.read(data);
+                          int off = 0;
+                          while (off < data.length) {
+                              int n = fis.read(data, off, data.length - off);
+                              if (n < 0) break;
+                              off += n;
+                          }
                           fis.close();
-                          return new String(data, "UTF-8");
+                          return new String(data, 0, off, "UTF-8");
                       } catch (Exception e) { return ""; }
                   }
 
                   @JavascriptInterface
                   public boolean writeFile(String path, String content) {
+                      if (!safe(path)) return false;
                       try {
                           File f = new File(path);
                           if (f.getParentFile() != null) f.getParentFile().mkdirs();
@@ -286,19 +322,24 @@ jobs:
 
                   @JavascriptInterface
                   public boolean makeDir(String path) {
-                      return new File(path).mkdirs();
+                      if (!safe(path)) return false;
+                      File f = new File(path);
+                      if (f.exists()) return f.isDirectory();
+                      return f.mkdirs();
                   }
 
                   @JavascriptInterface
                   public boolean deleteItem(String path) {
-                      File f = new File(path);
+                      if (!safe(path)) return false;
+                      return delRec(new File(path));
+                  }
+
+                  private boolean delRec(File f) {
                       if (!f.exists()) return false;
                       if (f.isDirectory()) {
                           File[] ch = f.listFiles();
                           if (ch != null) {
-                              for (int i = 0; i < ch.length; i++) {
-                                  deleteItem(ch[i].getAbsolutePath());
-                              }
+                              for (int i = 0; i < ch.length; i++) delRec(ch[i]);
                           }
                       }
                       return f.delete();
@@ -307,6 +348,8 @@ jobs:
                   @JavascriptInterface
                   public void openUrl(String url) {
                       try {
+                          if (url == null) return;
+                          if (!url.startsWith("http://") && !url.startsWith("https://")) return;
                           Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse(url));
                           intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
                           ctx.startActivity(intent);
@@ -326,496 +369,528 @@ jobs:
           }
           EOF
 
-      - name: Scaffold Assets HTML UI
+      - name: Scaffold HTML UI
         run: |
           cat << 'EOF' > app/src/main/assets/index.html
           <!DOCTYPE html>
           <html lang="fa" dir="rtl">
           <head>
-            <meta charset="UTF-8">
-            <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
-            <title>&#x0628;&#x0631;&#x0634; &#x06A9;&#x062F;</title>
-            <style>
-              *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
-              body{background:#0f172a;color:#f8fafc;font-family:Tahoma,sans-serif;padding:0 0 60px 0;font-size:14px}
-              .update-banner{background:#059669;color:#fff;padding:8px 12px;font-size:0.75rem;display:none;justify-content:space-between;align-items:center;cursor:pointer}
-              .tabs{display:flex;position:fixed;bottom:0;left:0;right:0;background:#1e293b;border-top:1px solid #334155;z-index:99}
-              .tab{flex:1;text-align:center;padding:12px 4px;font-size:0.85rem;font-weight:bold;color:#64748b;cursor:pointer}
-              .tab.active{color:#38bdf8;border-top:2px solid #38bdf8}
-              .page{display:none;padding:12px}
-              .page.active{display:block}
-              .head{text-align:center;background:#1e293b;border:1px solid #334155;border-radius:12px;padding:10px;margin-bottom:10px}
-              .head h1{font-size:1.1rem;color:#38bdf8}
-              .head p{font-size:0.7rem;color:#94a3b8}
-              .box{background:#1e293b;border:1px solid #334155;border-radius:10px;padding:10px;margin-bottom:10px}
-              textarea{width:100%;height:130px;background:#020617;border:1px solid #475569;border-radius:8px;color:#e2e8f0;font-family:monospace;font-size:0.75rem;padding:8px;resize:none;direction:ltr;text-align:left}
-              .bg{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:6px}
-              .b{border:none;border-radius:8px;padding:11px 4px;font-size:0.8rem;font-weight:bold;color:#fff;cursor:pointer;text-align:center}
-              .b:active{opacity:0.7}
-              .b-g{background:#16a34a}.b-b{background:#0284c7}.b-r{background:#dc2626}.b-y{background:#d97706}
-              .b-f{grid-column:span 2}
-              .st{display:flex;justify-content:space-around;background:#020617;border-radius:6px;padding:6px;margin-top:8px;font-size:0.7rem;color:#94a3b8}
-              .st b{color:#38bdf8}
-              .al{padding:6px 8px;border-radius:6px;font-size:0.7rem;margin-top:6px;display:none}
-              .al-e{background:#7f1d1d;color:#fca5a5}.al-o{background:#064e3b;color:#6ee7b7}
-              .ck{background:#1e293b;border:1px solid #334155;border-radius:8px;padding:10px;margin-top:8px}
-              .ck-t{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px}
-              .ck-n{color:#fbbf24;font-weight:bold;font-size:0.85rem}
-              .ck-i{color:#94a3b8;font-size:0.7rem}
-              .bc{width:100%;background:#2563eb;color:#fff;border:none;border-radius:8px;padding:10px;font-size:0.85rem;font-weight:bold}
-              .bc.done{background:#10b981}
-              .nav{display:flex;align-items:center;gap:8px;margin-bottom:10px}
-              .nav-b{background:#334155;color:#e2e8f0;border:none;border-radius:8px;padding:8px 12px;font-size:0.8rem;cursor:pointer}
-              .nav-t{font-size:0.95rem;font-weight:bold;color:#f59e0b;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-              .item{background:#1e293b;border:1px solid #334155;border-radius:8px;padding:12px;margin-bottom:6px;display:flex;justify-content:space-between;align-items:center;gap:8px}
-              .item-main{flex:1;cursor:pointer;overflow:hidden}
-              .item-main:active{opacity:0.6}
-              .item-n{font-size:0.9rem;font-weight:bold;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-              .item-m{font-size:0.7rem;color:#94a3b8}
-              .item-d{background:#7f1d1d;color:#fca5a5;border:none;border-radius:6px;padding:8px 12px;font-size:0.75rem;cursor:pointer;flex-shrink:0}
-              .item-d:active{background:#991b1b}
-              .empty{text-align:center;color:#64748b;padding:30px 10px;font-size:0.85rem}
-              .ed-head{display:flex;gap:6px;margin-bottom:8px}
-              .ed-area{width:100%;height:calc(100vh - 220px);background:#020617;border:1px solid #475569;border-radius:8px;color:#e2e8f0;font-family:monospace;font-size:0.75rem;padding:8px;resize:none;direction:ltr;text-align:left}
-              .modal-bg{display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.7);z-index:100;justify-content:center;align-items:center;padding:16px}
-              .modal-bg.show{display:flex}
-              .modal{background:#1e293b;border:1px solid #475569;border-radius:12px;padding:16px;width:100%;max-width:340px}
-              .modal h3{color:#38bdf8;margin-bottom:10px;font-size:0.95rem}
-              .modal p{color:#cbd5e1;margin-bottom:12px;font-size:0.85rem;line-height:1.5}
-              .modal input{width:100%;background:#020617;border:1px solid #475569;border-radius:6px;color:#e2e8f0;padding:10px;font-size:0.9rem;margin-bottom:10px}
-              .modal-btns{display:flex;gap:8px}
-              .modal-btns .b{flex:1}
-            </style>
+          <meta charset="UTF-8">
+          <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+          <title>&#x0628;&#x0631;&#x0634; &#x06A9;&#x062F;</title>
+          <style>
+          *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+          body{background:#0f172a;color:#f8fafc;font-family:Tahoma,sans-serif;padding:0 0 60px 0;font-size:14px}
+          .update-banner{background:#059669;color:#fff;padding:8px 12px;font-size:0.75rem;display:none;justify-content:space-between;align-items:center}
+          .tabs{display:flex;position:fixed;bottom:0;left:0;right:0;background:#1e293b;border-top:1px solid #334155;z-index:99}
+          .tab{flex:1;text-align:center;padding:12px 4px;font-size:0.85rem;font-weight:bold;color:#64748b}
+          .tab.active{color:#38bdf8;border-top:2px solid #38bdf8}
+          .page{display:none;padding:12px}
+          .page.active{display:block}
+          .head{text-align:center;background:#1e293b;border:1px solid #334155;border-radius:12px;padding:10px;margin-bottom:10px}
+          .head h1{font-size:1.1rem;color:#38bdf8}
+          .head p{font-size:0.7rem;color:#94a3b8}
+          .box{background:#1e293b;border:1px solid #334155;border-radius:10px;padding:10px;margin-bottom:10px}
+          textarea{width:100%;height:130px;background:#020617;border:1px solid #475569;border-radius:8px;color:#e2e8f0;font-family:monospace;font-size:0.75rem;padding:8px;resize:none;direction:ltr;text-align:left}
+          .bg{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:6px}
+          .b{border:none;border-radius:8px;padding:11px 4px;font-size:0.8rem;font-weight:bold;color:#fff;text-align:center}
+          .b:active{opacity:0.7}
+          .b-g{background:#16a34a}.b-b{background:#0284c7}.b-r{background:#dc2626}.b-y{background:#d97706}
+          .b-f{grid-column:span 2}
+          .st{display:flex;justify-content:space-around;background:#020617;border-radius:6px;padding:6px;margin-top:8px;font-size:0.7rem;color:#94a3b8}
+          .st b{color:#38bdf8}
+          .al{padding:6px 8px;border-radius:6px;font-size:0.7rem;margin-top:6px;display:none}
+          .al-e{background:#7f1d1d;color:#fca5a5}.al-o{background:#064e3b;color:#6ee7b7}
+          .ck{background:#1e293b;border:1px solid #334155;border-radius:8px;padding:10px;margin-top:8px}
+          .ck-t{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px}
+          .ck-n{color:#fbbf24;font-weight:bold;font-size:0.85rem}
+          .ck-i{color:#94a3b8;font-size:0.7rem}
+          .bc{width:100%;background:#2563eb;color:#fff;border:none;border-radius:8px;padding:10px;font-size:0.85rem;font-weight:bold}
+          .bc.done{background:#10b981}
+          .nav{display:flex;align-items:center;gap:8px;margin-bottom:10px}
+          .nav-b{background:#334155;color:#e2e8f0;border:none;border-radius:8px;padding:8px 12px;font-size:0.8rem}
+          .nav-t{font-size:0.95rem;font-weight:bold;color:#f59e0b;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+          .item{background:#1e293b;border:1px solid #334155;border-radius:8px;padding:12px;margin-bottom:6px;display:flex;justify-content:space-between;align-items:center;gap:8px}
+          .item-main{flex:1;overflow:hidden}
+          .item-main:active{opacity:0.6}
+          .item-n{font-size:0.9rem;font-weight:bold;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+          .item-d{background:#7f1d1d;color:#fca5a5;border:none;border-radius:6px;padding:8px 12px;font-size:0.75rem;flex-shrink:0}
+          .empty{text-align:center;color:#64748b;padding:30px 10px;font-size:0.85rem}
+          .ed-head{display:flex;gap:6px;margin-bottom:8px}
+          .ed-area{width:100%;height:calc(100vh - 230px);background:#020617;border:1px solid #475569;border-radius:8px;color:#e2e8f0;font-family:monospace;font-size:0.75rem;padding:8px;resize:none;direction:ltr;text-align:left}
+          .modal-bg{display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.7);z-index:100;justify-content:center;align-items:center;padding:16px}
+          .modal-bg.show{display:flex}
+          .modal{background:#1e293b;border:1px solid #475569;border-radius:12px;padding:16px;width:100%;max-width:340px}
+          .modal h3{color:#38bdf8;margin-bottom:10px;font-size:0.95rem}
+          .modal p{color:#cbd5e1;margin-bottom:12px;font-size:0.85rem;line-height:1.5;word-break:break-all}
+          .modal input{width:100%;background:#020617;border:1px solid #475569;border-radius:6px;color:#e2e8f0;padding:10px;font-size:0.9rem;margin-bottom:10px}
+          .modal-btns{display:flex;gap:8px}
+          .modal-btns .b{flex:1}
+          </style>
           </head>
           <body>
 
-            <div class="update-banner" id="updBanner" onclick="openRelease()">
-              <span>&#x1F389; &#x0646;&#x0633;&#x062E;&#x0647; &#x062C;&#x062F;&#x06CC;&#x062F; &#x0645;&#x0648;&#x062C;&#x0648;&#x062F; &#x0627;&#x0633;&#x062A;!</span>
-              <span style="text-decoration:underline;">&#x062F;&#x0627;&#x0646;&#x0644;&#x0648;&#x062F;</span>
-            </div>
+          <div class="update-banner" id="updBanner" onclick="openRelease()">
+            <span>&#x1F389; &#x0646;&#x0633;&#x062E;&#x0647; &#x062C;&#x062F;&#x06CC;&#x062F; &#x0645;&#x0648;&#x062C;&#x0648;&#x062F; &#x0627;&#x0633;&#x062A;!</span>
+            <span style="text-decoration:underline;">&#x062F;&#x0627;&#x0646;&#x0644;&#x0648;&#x062F;</span>
+          </div>
 
-            <div id="pg-split" class="page active">
-              <div class="head">
-                <h1>&#x2702;&#xFE0F; &#x0627;&#x0628;&#x0632;&#x0627;&#x0631; &#x0628;&#x0631;&#x0634; &#x06A9;&#x062F;</h1>
-                <p>&#x0645;&#x062E;&#x0635;&#x0648;&#x0635; &#x06AF;&#x0648;&#x0634;&#x06CC; &#x0648; &#x0686;&#x062A;&#x200C;&#x0628;&#x0627;&#x062A; &#x2022; v__BUILD_NUM__</p>
+          <div id="pg-split" class="page active">
+            <div class="head">
+              <h1>&#x2702;&#xFE0F; &#x0627;&#x0628;&#x0632;&#x0627;&#x0631; &#x0628;&#x0631;&#x0634; &#x06A9;&#x062F;</h1>
+              <p>&#x0645;&#x062E;&#x0635;&#x0648;&#x0635; &#x06AF;&#x0648;&#x0634;&#x06CC; &#x2022; v2.__BUILD_NUM__</p>
+            </div>
+            <div class="box">
+              <textarea id="src" placeholder="code here..."></textarea>
+              <div class="bg">
+                <button class="b b-g b-f" onclick="doSplit()">&#x26A1; &#x0628;&#x0631;&#x0634; &#x0647;&#x0648;&#x0634;&#x0645;&#x0646;&#x062F;</button>
+                <button class="b b-b" onclick="pasteClip()">&#x1F4CB; &#x067E;&#x06CC;&#x0633;&#x062A;</button>
+                <button class="b b-r" onclick="resetSplit()">&#x1F5D1;&#xFE0F; &#x067E;&#x0627;&#x06A9;</button>
               </div>
-              <div class="box">
-                <textarea id="src" placeholder="&#x06A9;&#x062F; &#x0631;&#x0627; &#x0627;&#x06CC;&#x0646;&#x062C;&#x0627; &#x067E;&#x06CC;&#x0633;&#x062A; &#x06A9;&#x0646;&#x06CC;&#x062F;..."></textarea>
-                <div class="bg">
-                  <button class="b b-g b-f" onclick="doSplit()">&#x26A1; &#x0628;&#x0631;&#x0634; &#x0647;&#x0648;&#x0634;&#x0645;&#x0646;&#x062F;</button>
-                  <button class="b b-b" onclick="pasteClip()">&#x1F4CB; &#x067E;&#x06CC;&#x0633;&#x062A;</button>
-                  <button class="b b-r" onclick="resetSplit()">&#x1F5D1;&#xFE0F; &#x067E;&#x0627;&#x06A9;</button>
-                </div>
-                <div class="st" id="stBox" style="display:none">
-                  <span>&#x062E;&#x0637;: <b id="stL">0</b></span>
-                  <span>&#x062A;&#x06A9;&#x0647;: <b id="stC">0</b></span>
-                  <span>&#x062D;&#x0631;&#x0641;: <b id="stCh">0</b></span>
-                </div>
-                <div id="asciiMsg" class="al"></div>
+              <div class="st" id="stBox" style="display:none">
+                <span>&#x062E;&#x0637;: <b id="stL">0</b></span>
+                <span>&#x062A;&#x06A9;&#x0647;: <b id="stC">0</b></span>
+                <span>&#x062D;&#x0631;&#x0641;: <b id="stCh">0</b></span>
               </div>
-              <div id="res"></div>
+              <div id="asciiMsg" class="al"></div>
             </div>
+            <div id="res"></div>
+          </div>
 
-            <div id="pg-proj" class="page">
-              <div id="proj-view"></div>
-            </div>
+          <div id="pg-proj" class="page">
+            <div id="proj-view"></div>
+          </div>
 
-            <div class="modal-bg" id="modalBg">
-              <div class="modal">
-                <h3 id="modalTitle"></h3>
-                <p id="modalMsg" style="display:none"></p>
-                <input id="modalInput" placeholder="" />
-                <div class="modal-btns">
-                  <button class="b b-g" onclick="modalOk()">&#x2705; &#x062A;&#x0623;&#x06CC;&#x06CC;&#x062F;</button>
-                  <button class="b b-r" onclick="modalClose()">&#x274C; &#x0644;&#x063A;&#x0648;</button>
-                </div>
+          <div class="modal-bg" id="modalBg">
+            <div class="modal">
+              <h3 id="modalTitle"></h3>
+              <p id="modalMsg" style="display:none"></p>
+              <input id="modalInput" placeholder="" />
+              <div class="modal-btns">
+                <button class="b b-g" onclick="modalOk()">&#x2705; &#x062A;&#x0627;&#x06CC;&#x06CC;&#x062F;</button>
+                <button class="b b-r" onclick="modalClose()">&#x274C; &#x0644;&#x063A;&#x0648;</button>
               </div>
             </div>
+          </div>
 
-            <div class="tabs">
-              <div class="tab active" id="tb-split" onclick="goTab('split')">&#x2702;&#xFE0F; &#x0628;&#x0631;&#x0634; &#x06A9;&#x062F;</div>
-              <div class="tab" id="tb-proj" onclick="goTab('proj')">&#x1F4C1; &#x067E;&#x0631;&#x0648;&#x0698;&#x0647;&#x200C;&#x0647;&#x0627;</div>
-            </div>
+          <div class="tabs">
+            <div class="tab active" id="tb-split" onclick="goTab('split')">&#x2702;&#xFE0F; &#x0628;&#x0631;&#x0634; &#x06A9;&#x062F;</div>
+            <div class="tab" id="tb-proj" onclick="goTab('proj')">&#x1F4C1; &#x067E;&#x0631;&#x0648;&#x0698;&#x0647;&#x200C;&#x0647;&#x0627;</div>
+          </div>
 
-            <script>
-              var MY_BUILD = __BUILD_NUM__;
-              var REPO = "__REPO__";
-              var CHUNKS=[];
-              var MARKERS=["/* ---------- leagues","/* ---------- results","/* ---------- stat model","/* ---------- settings","/* ---------- manual odds","/* ---------- api-football"];
-              var MAX_L=80;
-              var MAX_CHARS=2800;
-              var BP="";
-              var curProj="",curFolder="",curFile="";
-              var modalCb=null;
-              var CUR_ITEMS=[];
-              var latestUrl = "https://github.com/" + REPO + "/releases";
+          <script>
+          var MY_BUILD = __BUILD_NUM__;
+          var REPO = "__REPO__";
+          var MARKERS = ["/* ---------- leagues","/* ---------- results","/* ---------- stat model","/* ---------- settings","/* ---------- manual odds","/* ---------- api-football"];
+          var MAX_L = 80;
+          var MAX_CHARS = 2800;
+          var CHUNKS = [];
+          var BP = "";
+          var curProj = "", curFolder = "", curFile = "";
+          var modalCb = null;
+          var CUR_ITEMS = [];
+          var latestUrl = "https://github.com/" + REPO + "/releases";
 
-              window.onload=function(){
-                if(window.Android&&window.Android.basePath) BP=window.Android.basePath();
-                else BP="/data/data/com.saeed.splitter/files/projects";
-                var s="";
-                if(window.Android&&window.Android.load) s=window.Android.load("raw_code");
-                else s=localStorage.getItem("raw_code")||"";
-                if(s){document.getElementById("src").value=s;doSplit();}
-                renderProjList();
-                checkUpdate();
-              };
+          function T(m){ if(window.Android && window.Android.toast) window.Android.toast(m); }
 
-              function checkUpdate(){
-                try {
-                  var xhr = new XMLHttpRequest();
-                  xhr.open("GET", "https://api.github.com/repos/" + REPO + "/releases/latest", true);
-                  xhr.onload = function() {
-                    if (xhr.status === 200) {
-                      var data = JSON.parse(xhr.responseText);
-                      var tag = data.tag_name || "";
-                      var num = parseInt(tag.replace("v",""), 10);
-                      if (num > MY_BUILD) {
-                        document.getElementById("updBanner").style.display = "flex";
-                        if (data.assets && data.assets.length > 0) {
-                          latestUrl = data.assets[0].browser_download_url;
-                        }
-                      }
-                    }
-                  };
-                  xhr.send();
-                } catch(e) {}
-              }
+          function esc(s){ return (s+"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
 
-              function openRelease(){
-                if(window.Android&&window.Android.openUrl) window.Android.openUrl(latestUrl);
-              }
+          function ls(p){
+            try{
+              if(window.Android && window.Android.listDir) return JSON.parse(window.Android.listDir(p));
+            }catch(e){}
+            return [];
+          }
 
-              window.onBack=function(){
-                var pp=document.getElementById("pg-proj");
-                if(pp.className.indexOf("active")===-1){goTab("split");return true;}
-                if(curFile){curFile="";if(curFolder) renderFileList();else renderFolderList();return true;}
-                if(curFolder){curFolder="";renderFolderList();return true;}
-                if(curProj){curProj="";renderProjList();return true;}
-                return false;
-              };
+          function badName(n){
+            if(!n) return true;
+            if(n.indexOf("/")!==-1 || n.indexOf("\\")!==-1) return true;
+            if(n==="." || n==="..") return true;
+            return false;
+          }
 
-              function goTab(t){
-                document.getElementById("pg-split").className=t==="split"?"page active":"page";
-                document.getElementById("pg-proj").className=t==="proj"?"page active":"page";
-                document.getElementById("tb-split").className=t==="split"?"tab active":"tab";
-                document.getElementById("tb-proj").className=t==="proj"?"tab active":"tab";
-                if(t==="proj"){
-                  if(curFile) openFile(curFile, curPath());
-                  else if(curFolder) renderFileList();
-                  else if(curProj) renderFolderList();
-                  else renderProjList();
-                }
-              }
+          window.onload = function(){
+            if(window.Android && window.Android.basePath) BP = window.Android.basePath();
+            else BP = "/data/data/com.saeed.splitter/files/projects";
+            var s = "";
+            if(window.Android && window.Android.load) s = window.Android.load("raw_code");
+            else s = localStorage.getItem("raw_code") || "";
+            if(s){ document.getElementById("src").value = s; doSplit(); }
+            renderProjList();
+            checkUpdate();
+          };
 
-              function curPath(){
-                var p=BP+"/"+curProj;
-                if(curFolder) p+="/"+curFolder;
-                return p;
-              }
-
-              function pasteClip(){
-                var t="";
-                if(window.Android&&window.Android.clip) t=window.Android.clip();
-                if(t){document.getElementById("src").value=t;doSplit();}
-                else alert("&#x0645;&#x062A;&#x0646;&#x06CC; &#x062F;&#x0631; &#x062D;&#x0627;&#x0641;&#x0638;&#x0647; &#x0646;&#x06CC;&#x0633;&#x062A;.");
-              }
-
-              function resetSplit(){
-                document.getElementById("src").value="";
-                document.getElementById("res").innerHTML="";
-                document.getElementById("stBox").style.display="none";
-                document.getElementById("asciiMsg").style.display="none";
-                if(window.Android&&window.Android.save) window.Android.save("raw_code","");
-                localStorage.removeItem("raw_code");
-              }
-
-              function doSplit(){
-                var txt=document.getElementById("src").value;
-                if(!txt||!txt.trim()) return;
-                if(window.Android&&window.Android.save) window.Android.save("raw_code",txt);
-                else localStorage.setItem("raw_code",txt);
-                var bad=[];var lines=txt.split("\n");
-                for(var i=0;i<lines.length;i++) if(/[^\x00-\x7F]/.test(lines[i])) bad.push(i+1);
-                var am=document.getElementById("asciiMsg");am.style.display="block";
-                if(bad.length>0){am.className="al al-e";am.innerHTML="&#x26A0;&#xFE0F; &#x0647;&#x0634;&#x062F;&#x0627;&#x0631; ASCII: &#x062E;&#x0637; "+bad.slice(0,5).join(",")+(bad.length>5?"...":"");}
-                else{am.className="al al-o";am.innerHTML="&#x2705; &#x06A9;&#x062F; 100% ASCII &#x0627;&#x0633;&#x062A;.";}
-                
-                CHUNKS=[];
-                var cur=[];
-                var curLen=0;
-
-                for(var i=0;i<lines.length;i++){
-                  var line=lines[i];
-                  var isM=false;
-                  for(var m=0;m<MARKERS.length;m++) if(line.indexOf(MARKERS[m])!==-1){isM=true;break;}
-
-                  var wouldExceedChars = (curLen + line.length + 1) > MAX_CHARS;
-                  var wouldExceedLines = cur.length >= MAX_L;
-
-                  if((isM && cur.length > 20) || wouldExceedLines || wouldExceedChars){
-                    if(cur.length > 0){
-                      CHUNKS.push(cur.join("\n"));
-                      cur=[];
-                      curLen=0;
+          function checkUpdate(){
+            try{
+              var xhr = new XMLHttpRequest();
+              xhr.open("GET","https://api.github.com/repos/" + REPO + "/releases/latest", true);
+              xhr.onload = function(){
+                try{
+                  if(xhr.status === 200){
+                    var d = JSON.parse(xhr.responseText);
+                    var tag = d.tag_name || "";
+                    var num = parseInt(tag.replace("v",""),10);
+                    if(!isNaN(num) && num > MY_BUILD){
+                      document.getElementById("updBanner").style.display = "flex";
+                      if(d.assets && d.assets.length > 0) latestUrl = d.assets[0].browser_download_url;
                     }
                   }
-                  cur.push(line);
-                  curLen += line.length + 1;
-                }
-                if(cur.length>0) CHUNKS.push(cur.join("\n"));
+                }catch(e){}
+              };
+              xhr.send();
+            }catch(e){}
+          }
 
-                document.getElementById("stBox").style.display="flex";
-                document.getElementById("stL").innerText=lines.length;
-                document.getElementById("stC").innerText=CHUNKS.length;
-                document.getElementById("stCh").innerText=txt.length;
-                var out="";var stL=1;
-                for(var c=0;c<CHUNKS.length;c++){
-                  var cl=CHUNKS[c].split("\n").length;var endL=stL+cl-1;
-                  out+='<div class="ck"><div class="ck-t"><span class="ck-n">&#x1F4E6; &#x062A;&#x06A9;&#x0647; '+(c+1)+' &#x0627;&#x0632; '+CHUNKS.length+'</span><span class="ck-i">&#x062E;&#x0637; '+stL+' &#x062A;&#x0627; '+endL+' ('+cl+' &#x062E;&#x0637;)</span></div><button class="bc" id="b_'+c+'" onclick="copyC('+c+')">&#x1F4CB; &#x06A9;&#x067E;&#x06CC; &#x062A;&#x06A9;&#x0647; '+(c+1)+'</button></div>';
-                  stL=endL+1;
-                }
-                document.getElementById("res").innerHTML=out;
+          function openRelease(){
+            if(window.Android && window.Android.openUrl) window.Android.openUrl(latestUrl);
+          }
+
+          function goTab(t){
+            document.getElementById("pg-split").className = (t==="split") ? "page active" : "page";
+            document.getElementById("pg-proj").className  = (t==="proj")  ? "page active" : "page";
+            document.getElementById("tb-split").className = (t==="split") ? "tab active" : "tab";
+            document.getElementById("tb-proj").className  = (t==="proj")  ? "tab active" : "tab";
+            if(t === "proj"){
+              if(curFile) openFile(curFile, curPath());
+              else if(curFolder) renderFileList();
+              else if(curProj) renderFolderList();
+              else renderProjList();
+            }
+          }
+
+          function curPath(){
+            var p = BP + "/" + curProj;
+            if(curFolder) p += "/" + curFolder;
+            return p;
+          }
+
+          window.onBack = function(){
+            if(document.getElementById("modalBg").className.indexOf("show") !== -1){ modalClose(); return true; }
+            if(document.getElementById("pg-proj").className.indexOf("active") === -1) return false;
+            if(curFile){ backFromFile(); return true; }
+            if(curFolder){ renderFolderList(); return true; }
+            if(curProj){ renderProjList(); return true; }
+            goTab("split");
+            return true;
+          };
+
+          function pasteClip(){
+            var t = "";
+            if(window.Android && window.Android.clip) t = window.Android.clip();
+            if(t){ document.getElementById("src").value = t; doSplit(); }
+            else T("\u062D\u0627\u0641\u0638\u0647 \u062E\u0627\u0644\u06CC \u0627\u0633\u062A");
+          }
+
+          function resetSplit(){
+            document.getElementById("src").value = "";
+            document.getElementById("res").innerHTML = "";
+            document.getElementById("stBox").style.display = "none";
+            document.getElementById("asciiMsg").style.display = "none";
+            CHUNKS = [];
+            if(window.Android && window.Android.save) window.Android.save("raw_code","");
+            try{ localStorage.removeItem("raw_code"); }catch(e){}
+          }
+
+          function doSplit(){
+            var txt = document.getElementById("src").value;
+            if(!txt || !txt.trim()) return;
+            if(window.Android && window.Android.save) window.Android.save("raw_code", txt);
+            else { try{ localStorage.setItem("raw_code", txt); }catch(e){} }
+
+            var lines = txt.split("\n");
+            var bad = [];
+            for(var i=0;i<lines.length;i++){ if(/[^\x00-\x7F]/.test(lines[i])) bad.push(i+1); }
+            var am = document.getElementById("asciiMsg");
+            am.style.display = "block";
+            if(bad.length > 0){
+              am.className = "al al-e";
+              am.innerHTML = "&#x26A0;&#xFE0F; ASCII: &#x062E;&#x0637; " + bad.slice(0,5).join(",") + (bad.length>5?" ...":"");
+            } else {
+              am.className = "al al-o";
+              am.innerHTML = "&#x2705; 100% ASCII";
+            }
+
+            CHUNKS = [];
+            var cur = [];
+            var curLen = 0;
+            for(var i=0;i<lines.length;i++){
+              var line = lines[i];
+              var isM = false;
+              for(var m=0;m<MARKERS.length;m++){ if(line.indexOf(MARKERS[m]) !== -1){ isM = true; break; } }
+              var exC = (curLen + line.length + 1) > MAX_CHARS;
+              var exL = cur.length >= MAX_L;
+              if((isM && cur.length > 20) || exL || exC){
+                if(cur.length > 0){ CHUNKS.push(cur.join("\n")); cur = []; curLen = 0; }
               }
+              cur.push(line);
+              curLen += line.length + 1;
+            }
+            if(cur.length > 0) CHUNKS.push(cur.join("\n"));
 
-              function copyC(idx){
-                var content = "```\n" + CHUNKS[idx] + "\n```";
-                if(window.Android&&window.Android.setClip) window.Android.setClip(content);
-                else{var ta=document.createElement("textarea");ta.value=content;document.body.appendChild(ta);ta.select();document.execCommand("copy");document.body.removeChild(ta);}
-                var btn=document.getElementById("b_"+idx);btn.className="bc done";btn.innerHTML="&#x2705; &#x062A;&#x06A9;&#x0647; " + (idx + 1) + " &#x06A9;&#x067E;&#x06CC; &#x0634;&#x062F;!";
-                setTimeout(function(){btn.className="bc";btn.innerHTML="&#x1F4CB; &#x06A9;&#x067E;&#x06CC; &#x062A;&#x06A9;&#x0647; "+(idx+1);},2500);
-              }
+            document.getElementById("stBox").style.display = "flex";
+            document.getElementById("stL").innerHTML = lines.length;
+            document.getElementById("stC").innerHTML = CHUNKS.length;
+            document.getElementById("stCh").innerHTML = txt.length;
 
-              function showPrompt(title,placeholder,cb){
-                document.getElementById("modalTitle").innerText=title;
-                document.getElementById("modalMsg").style.display="none";
-                document.getElementById("modalInput").style.display="block";
-                document.getElementById("modalInput").placeholder=placeholder;
-                document.getElementById("modalInput").value="";
-                document.getElementById("modalBg").className="modal-bg show";
-                modalCb=cb;
-                setTimeout(function(){document.getElementById("modalInput").focus();},300);
-              }
+            var out = "", stL = 1;
+            for(var c=0;c<CHUNKS.length;c++){
+              var cl = CHUNKS[c].split("\n").length;
+              var endL = stL + cl - 1;
+              out += '<div class="ck"><div class="ck-t">';
+              out += '<span class="ck-n">&#x1F4E6; ' + (c+1) + ' / ' + CHUNKS.length + '</span>';
+              out += '<span class="ck-i">' + stL + ' - ' + endL + ' (' + cl + ')</span>';
+              out += '</div><button class="bc" id="b_' + c + '" onclick="copyC(' + c + ')">&#x1F4CB; &#x06A9;&#x067E;&#x06CC; ' + (c+1) + '</button></div>';
+              stL = endL + 1;
+            }
+            document.getElementById("res").innerHTML = out;
+          }
 
-              function showConfirm(title,msg,cb){
-                document.getElementById("modalTitle").innerText=title;
-                document.getElementById("modalMsg").style.display="block";
-                document.getElementById("modalMsg").innerText=msg;
-                document.getElementById("modalInput").style.display="none";
-                document.getElementById("modalBg").className="modal-bg show";
-                modalCb=function(){cb(true);};
-              }
+          function copyC(idx){
+            var fence = "```";
+            if(CHUNKS[idx].indexOf("```") !== -1) fence = "~~~";
+            var content = fence + "\n" + CHUNKS[idx] + "\n" + fence;
+            if(window.Android && window.Android.setClip) window.Android.setClip(content);
+            else {
+              var ta = document.createElement("textarea");
+              ta.value = content; document.body.appendChild(ta); ta.select();
+              try{ document.execCommand("copy"); }catch(e){}
+              document.body.removeChild(ta);
+            }
+            var btn = document.getElementById("b_" + idx);
+            btn.className = "bc done";
+            btn.innerHTML = "&#x2705; " + (idx+1) + " &#x06A9;&#x067E;&#x06CC; &#x0634;&#x062F;";
+            setTimeout(function(){
+              btn.className = "bc";
+              btn.innerHTML = "&#x1F4CB; &#x06A9;&#x067E;&#x06CC; " + (idx+1);
+            }, 2500);
+          }
 
-              function modalClose(){document.getElementById("modalBg").className="modal-bg";modalCb=null;}
+          function showPrompt(title, ph, cb){
+            document.getElementById("modalTitle").innerHTML = title;
+            document.getElementById("modalMsg").style.display = "none";
+            var inp = document.getElementById("modalInput");
+            inp.style.display = "block";
+            inp.placeholder = ph || "";
+            inp.value = "";
+            document.getElementById("modalBg").className = "modal-bg show";
+            modalCb = cb;
+            setTimeout(function(){ try{ inp.focus(); }catch(e){} }, 120);
+          }
 
-              function modalOk(){
-                var inp=document.getElementById("modalInput");
-                if(inp.style.display!=="none"){
-                  var v=inp.value.trim();
-                  if(!v){alert("&#x0644;&#x0637;&#x0641;&#x0627;&#x064B; &#x0646;&#x0627;&#x0645; &#x0631;&#x0627; &#x0648;&#x0627;&#x0631;&#x062F; &#x06A9;&#x0646;&#x06CC;&#x062F;.");return;}
-                  if(v.indexOf("/")!==-1||v.indexOf("\\")!==-1){alert("&#x0646;&#x0627;&#x0645; &#x0646;&#x0628;&#x0627;&#x06CC;&#x062F; &#x0634;&#x0627;&#x0645;&#x0644; / &#x06CC;&#x0627; \\ &#x0628;&#x0627;&#x0634;&#x062F;.");return;}
-                  document.getElementById("modalBg").className="modal-bg";
-                  var cb=modalCb;modalCb=null;
-                  if(cb) cb(v);
-                } else {
-                  document.getElementById("modalBg").className="modal-bg";
-                  var cb=modalCb;modalCb=null;
-                  if(cb) cb();
-                }
-              }
+          function showConfirm(title, msg, cb){
+            document.getElementById("modalTitle").innerHTML = title;
+            var p = document.getElementById("modalMsg");
+            p.style.display = "block";
+            p.innerHTML = esc(msg);
+            document.getElementById("modalInput").style.display = "none";
+            document.getElementById("modalBg").className = "modal-bg show";
+            modalCb = cb;
+          }
 
-              function ls(path){
-                var r="[]";
-                if(window.Android&&window.Android.listDir) r=window.Android.listDir(path);
-                try{return JSON.parse(r);}catch(e){return[];}
-              }
+          function modalClose(){
+            document.getElementById("modalBg").className = "modal-bg";
+            modalCb = null;
+          }
 
-              function esc(s){
-                return (s+"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
-              }
+          function modalOk(){
+            var cb = modalCb;
+            var inp = document.getElementById("modalInput");
+            var val = (inp.style.display === "none") ? true : inp.value.replace(/^\s+|\s+$/g,"");
+            modalClose();
+            if(cb) cb(val);
+          }
 
-              function renderProjList(){
-                curProj="";curFolder="";curFile="";
-                var items=ls(BP);
-                var dirs=[];
-                for(var i=0;i<items.length;i++) if(items[i].t==="d") dirs.push(items[i].n);
-                dirs.sort();
-                CUR_ITEMS=dirs;
-                var h='<div class="head"><h1>&#x1F4C1; &#x067E;&#x0631;&#x0648;&#x0698;&#x0647;&#x200C;&#x0647;&#x0627;</h1><p>&#x0645;&#x062F;&#x06CC;&#x0631;&#x06CC;&#x062A; &#x0641;&#x0627;&#x06CC;&#x0644;&#x200C;&#x0647;&#x0627;&#x06CC; &#x06A9;&#x062F; &#x0648; &#x06AF;&#x0632;&#x0627;&#x0631;&#x0634; &#x062E;&#x0637;&#x0627;</p></div>';
-                h+='<button class="b b-g" style="width:100%;margin-bottom:10px" onclick="newProj()">&#x2795; &#x067E;&#x0631;&#x0648;&#x0698;&#x0647; &#x062C;&#x062F;&#x06CC;&#x062F;</button>';
-                if(dirs.length===0) h+='<div class="empty">&#x0647;&#x0646;&#x0648;&#x0632; &#x067E;&#x0631;&#x0648;&#x0698;&#x0647;&#x200C;&#x0627;&#x06CC; &#x0633;&#x0627;&#x062E;&#x062A;&#x0647; &#x0646;&#x0634;&#x062F;&#x0647.<br>&#x062F;&#x06A9;&#x0645;&#x0647; &#x0628;&#x0627;&#x0644;&#x0627; &#x0631;&#x0627; &#x0628;&#x0632;&#x0646;&#x06CC;&#x062F;.</div';
-                for(var i=0;i<dirs.length;i++){
-                  h+='<div class="item"><div class="item-main" onclick="actOpen('+i+',\'p\')"><div class="item-n">&#x1F4C2; '+esc(dirs[i])+'</div><div class="item-m">&#x067E;&#x0631;&#x0648;&#x0698;&#x0647;</div></div><button class="item-d" onclick="actDel('+i+',\'p\')">&#x1F5D1; &#x062D;&#x0630;&#x0641;</button></div>';
-                }
-                document.getElementById("proj-view").innerHTML=h;
-              }
+          function renderProjList(){
+            curProj = ""; curFolder = ""; curFile = "";
+            var items = ls(BP);
+            var dirs = [];
+            for(var i=0;i<items.length;i++){ if(items[i].t === "d") dirs.push(items[i].n); }
+            dirs.sort();
+            CUR_ITEMS = dirs;
+            var h = '<div class="head"><h1>&#x1F4C1; &#x067E;&#x0631;&#x0648;&#x0698;&#x0647;&#x200C;&#x0647;&#x0627;</h1></div>';
+            h += '<div class="bg"><button class="b b-g b-f" onclick="newProj()">&#x2795; &#x067E;&#x0631;&#x0648;&#x0698;&#x0647; &#x062C;&#x062F;&#x06CC;&#x062F;</button></div><div style="height:10px"></div>';
+            if(dirs.length === 0) h += '<div class="empty">&#x062E;&#x0627;&#x0644;&#x06CC; &#x0627;&#x0633;&#x062A;</div>';
+            for(var i=0;i<dirs.length;i++){
+              h += '<div class="item"><div class="item-main" onclick="openProj(' + i + ')"><div class="item-n">&#x1F4C1; ' + esc(dirs[i]) + '</div></div>';
+              h += '<button class="item-d" onclick="delProj(' + i + ')">&#x1F5D1;&#xFE0F;</button></div>';
+            }
+            document.getElementById("proj-view").innerHTML = h;
+          }
 
-              function actOpen(idx,type){
-                var name=CUR_ITEMS[idx];
-                if(!name) return;
-                if(type==="p"){curProj=name;curFolder="";renderFolderList();}
-                else if(type==="d"){curFolder=name;renderFileList();}
-                else if(type==="f"){openFile(name,curPath());}
-              }
+          function newProj(){
+            showPrompt("&#x067E;&#x0631;&#x0648;&#x0698;&#x0647; &#x062C;&#x062F;&#x06CC;&#x062F;", "name", function(v){
+              if(badName(v)){ T("\u0646\u0627\u0645 \u0646\u0627\u0645\u0639\u062A\u0628\u0631"); return; }
+              if(window.Android && window.Android.makeDir) window.Android.makeDir(BP + "/" + v);
+              renderProjList();
+            });
+          }
 
-              function actDel(idx,type){
-                var name=CUR_ITEMS[idx];
-                if(!name) return;
-                var path;
-                if(type==="p") path=BP+"/"+name;
-                else path=curPath()+"/"+name;
-                var isDir=(type==="p"||type==="d");
-                var msg=isDir?("&#x067E;&#x0648;&#x0634;&#x0647; \""+name+"\" &#x0648; &#x0647;&#x0645;&#x0647; &#x0645;&#x062D;&#x062A;&#x0648;&#x06CC;&#x0627;&#x062A;&#x0634; &#x062D;&#x0630;&#x0641; &#x0634;&#x0648;&#x062F;&#x061F;"):("&#x0641;&#x0627;&#x06CC;&#x0644; \""+name+"\" &#x062D;&#x0630;&#x0641; &#x0634;&#x0648;&#x062F;&#x061F;");
-                showConfirm("&#x062A;&#x0623;&#x06CC;&#x06CC;&#x062F; &#x062D;&#x0630;&#x0641;",msg,function(){
-                  if(window.Android&&window.Android.deleteItem){
-                    var ok=window.Android.deleteItem(path);
-                    if(window.Android.toast) window.Android.toast(ok?"&#x2705; &#x062D;&#x0630;&#x0641; &#x0634;&#x062F;":"&#x274C; &#x062E;&#x0637;&#x0627; &#x062F;&#x0631; &#x062D;&#x0630;&#x0641;");
-                  }
-                  if(type==="p") renderProjList();
-                  else if(curFolder) renderFileList();
-                  else renderFolderList();
-                });
-              }
+          function openProj(i){
+            curProj = CUR_ITEMS[i]; curFolder = ""; curFile = "";
+            renderFolderList();
+          }
 
-              function newProj(){
-                showPrompt("&#x067E;&#x0631;&#x0648;&#x0698;&#x0647; &#x062C;&#x062F;&#x06CC;&#x062F;","&#x0646;&#x0627;&#x0645; &#x067E;&#x0631;&#x0648;&#x0698;&#x0647;",function(name){
-                  if(window.Android&&window.Android.makeDir) window.Android.makeDir(BP+"/"+name);
-                  renderProjList();
-                });
-              }
+          function delProj(i){
+            var n = CUR_ITEMS[i];
+            showConfirm("&#x1F5D1;&#xFE0F; &#x062D;&#x0630;&#x0641;", n, function(){
+              if(window.Android && window.Android.deleteItem) window.Android.deleteItem(BP + "/" + n);
+              renderProjList();
+            });
+          }
 
-              function renderFolderList(){
-                curFolder="";curFile="";
-                var path=BP+"/"+curProj;
-                var items=ls(path);
-                var dirs=[];var files=[];
-                for(var i=0;i<items.length;i++){if(items[i].t==="d") dirs.push(items[i].n);else files.push(items[i].n);}
-                dirs.sort();files.sort();
-                CUR_ITEMS=dirs.concat(files);
-                var dLen=dirs.length;
-                var h='<div class="nav"><button class="nav-b" onclick="renderProjList()">&#x2190; &#x0628;&#x0631;&#x06AF;&#x0634;&#x062A;</button><span class="nav-t">'+esc(curProj)+'</span></div>';
-                h+='<div class="bg" style="margin-bottom:10px"><button class="b b-g" onclick="newFolder()">&#x2795; &#x067E;&#x0648;&#x0634;&#x0647;</button><button class="b b-b" onclick="newFileHere()">&#x2795; &#x0641;&#x0627;&#x06CC;&#x0644;</button></div>';
-                if(dirs.length===0&&files.length===0) h+='<div class="empty">&#x0627;&#x06CC;&#x0646; &#x067E;&#x0631;&#x0648;&#x0698;&#x0647; &#x062E;&#x0627;&#x0644;&#x06CC; &#x0627;&#x0633;&#x062A;.</div>';
-                for(var i=0;i<dirs.length;i++){
-                  h+='<div class="item"><div class="item-main" onclick="actOpen('+i+',\'d\')"><div class="item-n">&#x1F4C1; '+esc(dirs[i])+'</div><div class="item-m">&#x067E;&#x0648;&#x0634;&#x0647;</div></div><button class="item-d" onclick="actDel('+i+',\'d\')">&#x1F5D1; &#x062D;&#x0630;&#x0641;</button></div>';
-                }
-                for(var i=0;i<files.length;i++){
-                  var ii=dLen+i;
-                  h+='<div class="item"><div class="item-main" onclick="actOpen('+ii+',\'f\')"><div class="item-n">&#x1F4C4; '+esc(files[i])+'</div><div class="item-m">&#x0641;&#x0627;&#x06CC;&#x0644;</div></div><button class="item-d" onclick="actDel('+ii+',\'f\')">&#x1F5D1; &#x062D;&#x0630;&#x0641;</button></div>';
-                }
-                document.getElementById("proj-view").innerHTML=h;
-              }
+          function sortItems(a,b){
+            if(a.t !== b.t) return (a.t === "d") ? -1 : 1;
+            return (a.n < b.n) ? -1 : 1;
+          }
 
-              function newFolder(){
-                showPrompt("&#x067E;&#x0648;&#x0634;&#x0647; &#x062C;&#x062F;&#x06CC;&#x062F;","&#x0645;&#x062B;&#x0644;&#x0627;&#x064B;: &#x062E;&#x0637;&#x0627;&#x0647;&#x0627;",function(name){
-                  if(window.Android&&window.Android.makeDir) window.Android.makeDir(BP+"/"+curProj+"/"+name);
-                  renderFolderList();
-                });
-              }
+          function renderFolderList(){
+            curFolder = ""; curFile = "";
+            var items = ls(BP + "/" + curProj);
+            items.sort(sortItems);
+            CUR_ITEMS = items;
+            var h = '<div class="nav"><button class="nav-b" onclick="renderProjList()">&#x2B05;&#xFE0F;</button><div class="nav-t">' + esc(curProj) + '</div></div>';
+            h += '<div class="bg"><button class="b b-y" onclick="newFolder()">&#x2795; &#x067E;&#x0648;&#x0634;&#x0647;</button><button class="b b-b" onclick="newFile()">&#x2795; &#x0641;&#x0627;&#x06CC;&#x0644;</button></div><div style="height:10px"></div>';
+            h += itemsHtml(items);
+            document.getElementById("proj-view").innerHTML = h;
+          }
 
-              function newFileHere(){
-                showPrompt("&#x0641;&#x0627;&#x06CC;&#x0644; &#x062C;&#x062F;&#x06CC;&#x062F;","&#x0645;&#x062B;&#x0644;&#x0627;&#x064B;: bug.txt",function(name){
-                  var path=BP+"/"+curProj+"/"+name;
-                  if(window.Android&&window.Android.writeFile){
-                    var ok=window.Android.writeFile(path,"");
-                    if(ok) openFile(name,BP+"/"+curProj);
-                    else alert("&#x062E;&#x0637;&#x0627; &#x062F;&#x0631; &#x0633;&#x0627;&#x062E;&#x062A; &#x0641;&#x0627;&#x06CC;&#x0644;!");
-                  }
-                });
-              }
+          function renderFileList(){
+            curFile = "";
+            var items = ls(BP + "/" + curProj + "/" + curFolder);
+            items.sort(sortItems);
+            CUR_ITEMS = items;
+            var h = '<div class="nav"><button class="nav-b" onclick="renderFolderList()">&#x2B05;&#xFE0F;</button><div class="nav-t">' + esc(curFolder) + '</div></div>';
+            h += '<div class="bg"><button class="b b-b b-f" onclick="newFile()">&#x2795; &#x0641;&#x0627;&#x06CC;&#x0644;</button></div><div style="height:10px"></div>';
+            h += itemsHtml(items);
+            document.getElementById("proj-view").innerHTML = h;
+          }
 
-              function renderFileList(){
-                curFile="";
-                var path=BP+"/"+curProj+"/"+curFolder;
-                var items=ls(path);
-                var files=[];
-                for(var i=0;i<items.length;i++) if(items[i].t==="f") files.push(items[i].n);
-                files.sort();
-                CUR_ITEMS=files;
-                var h='<div class="nav"><button class="nav-b" onclick="curFolder=\'\';renderFolderList()">&#x2190; &#x0628;&#x0631;&#x06AF;&#x0634;&#x062A;</button><span class="nav-t">&#x1F4C1; '+esc(curProj)+' / '+esc(curFolder)+'</span></div>';
-                h+='<button class="b b-b" style="width:100%;margin-bottom:10px" onclick="newFileInFolder()">&#x2795; &#x0641;&#x0627;&#x06CC;&#x0644; &#x062C;&#x062F;&#x06CC;&#x062F;</button>';
-                if(files.length===0) h+='<div class="empty">&#x0627;&#x06CC;&#x0646; &#x067E;&#x0648;&#x0634;&#x0647; &#x062E;&#x0627;&#x0644;&#x06CC; &#x0627;&#x0633;&#x062A;.</div>';
-                for(var i=0;i<files.length;i++){
-                  h+='<div class="item"><div class="item-main" onclick="actOpen('+i+',\'f\')"><div class="item-n">&#x1F4C4; '+esc(files[i])+'</div><div class="item-m">&#x0641;&#x0627;&#x06CC;&#x0644;</div></div><button class="item-d" onclick="actDel('+i+',\'f\')">&#x1F5D1; &#x062D;&#x0630;&#x0641;</button></div>';
-                }
-                document.getElementById("proj-view").innerHTML=h;
-              }
+          function itemsHtml(items){
+            if(items.length === 0) return '<div class="empty">&#x062E;&#x0627;&#x0644;&#x06CC; &#x0627;&#x0633;&#x062A;</div>';
+            var h = "";
+            for(var i=0;i<items.length;i++){
+              var ic = (items[i].t === "d") ? "&#x1F4C1;" : "&#x1F4C4;";
+              h += '<div class="item"><div class="item-main" onclick="openIdx(' + i + ')"><div class="item-n">' + ic + ' ' + esc(items[i].n) + '</div></div>';
+              h += '<button class="item-d" onclick="delIdx(' + i + ')">&#x1F5D1;&#xFE0F;</button></div>';
+            }
+            return h;
+          }
 
-              function newFileInFolder(){
-                showPrompt("&#x0641;&#x0627;&#x06CC;&#x0644; &#x062C;&#x062F;&#x06CC;&#x062F;","&#x0645;&#x062B;&#x0644;&#x0627;&#x064B;: error_log.txt",function(name){
-                  var path=BP+"/"+curProj+"/"+curFolder+"/"+name;
-                  if(window.Android&&window.Android.writeFile){
-                    var ok=window.Android.writeFile(path,"");
-                    if(ok) openFile(name,BP+"/"+curProj+"/"+curFolder);
-                    else alert("&#x062E;&#x0637;&#x0627; &#x062F;&#x0631; &#x0633;&#x0627;&#x062E;&#x062A; &#x0641;&#x0627;&#x06CC;&#x0644;!");
-                  }
-                });
-              }
+          function openIdx(i){
+            var it = CUR_ITEMS[i];
+            if(!it) return;
+            if(it.t === "d"){ curFolder = it.n; renderFileList(); }
+            else openFile(it.n, curPath());
+          }
 
-              function openFile(name,dirPath){
-                curFile=name;
-                var content="";
-                if(window.Android&&window.Android.readFile) content=window.Android.readFile(dirPath+"/"+name);
-                var h='<div class="nav"><button class="nav-b" onclick="backFromFile()">&#x2190; &#x0628;&#x0631;&#x06AF;&#x0634;&#x062A;</button><span class="nav-t">'+esc(name)+'</span></div>';
-                h+='<div class="ed-head"><button class="b b-g" style="flex:1" onclick="saveFile()">&#x1F4BE; &#x0630;&#x062E;&#x06CC;&#x0631;&#x0647;</button><button class="b b-b" style="flex:1" onclick="copyFileContent()">&#x1F4CB; &#x06A9;&#x067E;&#x06CC; &#x06A9;&#x0644;</button></div>';
-                h+='<textarea class="ed-area" id="edArea"></textarea>';
-                document.getElementById("proj-view").innerHTML=h;
-                document.getElementById("edArea").value=content;
-              }
+          function delIdx(i){
+            var it = CUR_ITEMS[i];
+            if(!it) return;
+            var p = curPath() + "/" + it.n;
+            var wasFolder = curFolder;
+            showConfirm("&#x1F5D1;&#xFE0F; &#x062D;&#x0630;&#x0641;", it.n, function(){
+              if(window.Android && window.Android.deleteItem) window.Android.deleteItem(p);
+              if(wasFolder) renderFileList(); else renderFolderList();
+            });
+          }
 
-              function backFromFile(){
-                curFile="";
-                if(curFolder) renderFileList();
-                else renderFolderList();
-              }
+          function newFolder(){
+            showPrompt("&#x067E;&#x0648;&#x0634;&#x0647; &#x062C;&#x062F;&#x06CC;&#x062F;", "name", function(v){
+              if(badName(v)){ T("\u0646\u0627\u0645 \u0646\u0627\u0645\u0639\u062A\u0628\u0631"); return; }
+              if(window.Android && window.Android.makeDir) window.Android.makeDir(BP + "/" + curProj + "/" + v);
+              renderFolderList();
+            });
+          }
 
-              function saveFile(){
-                if(!curFile) return;
-                var fullPath=curPath()+"/"+curFile;
-                var content=document.getElementById("edArea").value;
-                if(window.Android&&window.Android.writeFile){
-                  var ok=window.Android.writeFile(fullPath,content);
-                  if(ok&&window.Android.toast) window.Android.toast("&#x2705; &#x0630;&#x062E;&#x06CC;&#x0631;&#x0647; &#x0634;&#x062F;");
-                  else if(!ok) alert("&#x062E;&#x0637;&#x0627; &#x062F;&#x0631; &#x0630;&#x062E;&#x06CC;&#x0631;&#x0647;!");
-                }
-              }
+          function newFile(){
+            var base = curPath();
+            var inFolder = curFolder;
+            showPrompt("&#x0641;&#x0627;&#x06CC;&#x0644; &#x062C;&#x062F;&#x06CC;&#x062F;", "name.txt", function(v){
+              if(badName(v)){ T("\u0646\u0627\u0645 \u0646\u0627\u0645\u0639\u062A\u0628\u0631"); return; }
+              var ok = false;
+              if(window.Android && window.Android.writeFile) ok = window.Android.writeFile(base + "/" + v, "");
+              if(ok){ if(inFolder) renderFileList(); else renderFolderList(); }
+              else T("\u062E\u0637\u0627");
+            });
+          }
 
-              function copyFileContent(){
-                var content=document.getElementById("edArea").value;
-                if(window.Android&&window.Android.setClip) window.Android.setClip(content);
-                else{var ta=document.createElement("textarea");ta.value=content;document.body.appendChild(ta);ta.select();document.execCommand("copy");document.body.removeChild(ta);}
-              }
-            </script>
+          function openFile(name, path){
+            curFile = name;
+            var full = path + "/" + name;
+            var c = "";
+            if(window.Android && window.Android.readFile) c = window.Android.readFile(full);
+            var h = '<div class="nav"><button class="nav-b" onclick="backFromFile()">&#x2B05;&#xFE0F;</button><div class="nav-t">' + esc(name) + '</div></div>';
+            h += '<div class="ed-head">';
+            h += '<button class="b b-g" style="flex:1" onclick="saveFile()">&#x1F4BE;</button>';
+            h += '<button class="b b-b" style="flex:1" onclick="copyFile()">&#x1F4CB;</button>';
+            h += '<button class="b b-y" style="flex:1" onclick="sendToSplit()">&#x2702;&#xFE0F;</button>';
+            h += '</div><textarea class="ed-area" id="edArea"></textarea>';
+            document.getElementById("proj-view").innerHTML = h;
+            document.getElementById("edArea").value = c;
+          }
+
+          function backFromFile(){
+            curFile = "";
+            if(curFolder) renderFileList(); else renderFolderList();
+          }
+
+          function saveFile(){
+            var el = document.getElementById("edArea");
+            if(!el) return;
+            var full = curPath() + "/" + curFile;
+            var ok = false;
+            if(window.Android && window.Android.writeFile) ok = window.Android.writeFile(full, el.value);
+            T(ok ? "\u0630\u062E\u06CC\u0631\u0647 \u0634\u062F" : "\u062E\u0637\u0627");
+          }
+
+          function copyFile(){
+            var el = document.getElementById("edArea");
+            if(!el) return;
+            if(window.Android && window.Android.setClip) window.Android.setClip(el.value);
+          }
+
+          function sendToSplit(){
+            var el = document.getElementById("edArea");
+            if(!el) return;
+            document.getElementById("src").value = el.value;
+            doSplit();
+            goTab("split");
+          }
+          </script>
           </body>
           </html>
           EOF
 
-      - name: Inject Dynamic Build Variables
+      - name: Replace Placeholders
         run: |
-          sed -i 's/__BUILD_NUM__/${{ github.run_number }}/g' app/build.gradle
-          sed -i 's/__BUILD_NUM__/${{ github.run_number }}/g' app/src/main/assets/index.html
-          sed -i 's|__REPO__|${{ github.repository }}|g' app/src/main/assets/index.html
+          sed -i "s/__BUILD_NUM__/${GITHUB_RUN_NUMBER}/g" app/build.gradle
+          sed -i "s/__BUILD_NUM__/${GITHUB_RUN_NUMBER}/g" app/src/main/assets/index.html
+          sed -i "s|__REPO__|${{ github.repository }}|g" app/src/main/assets/index.html
+          echo "--- check ---"
+          grep -n "versionCode" app/build.gradle
+          grep -n "MY_BUILD" app/src/main/assets/index.html
+          grep -n "var REPO" app/src/main/assets/index.html
 
       - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v4
+        uses: gradle/actions/setup-gradle@v3
         with:
           gradle-version: '8.7'
 
-      - name: Build APK
-        run: gradle assembleRelease --stacktrace
+      - name: Build Release APK
+        run: gradle assembleRelease --no-daemon --stacktrace
 
-      - name: Upload Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: CodeSplitter-APK
-          path: app/build/outputs/apk/release/app-release.apk
+      - name: Rename APK
+        run: |
+          mkdir -p out
+          cp app/build/outputs/apk/release/app-release.apk out/CodeSplitter-v${GITHUB_RUN_NUMBER}.apk
+          ls -lh out
 
-      - name: Create Release
+      - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
-        if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
         with:
           tag_name: v${{ github.run_number }}
-          name: Code Splitter v${{ github.run_number }}
-          files: app/build/outputs/apk/release/app-release.apk
+          name: Code Splitter v2.${{ github.run_number }}
+          files: out/CodeSplitter-v${{ github.run_number }}.apk
+          generate_release_notes: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
